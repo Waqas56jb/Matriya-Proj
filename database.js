@@ -263,6 +263,93 @@ const PolicyAuditLog = sequelize ? sequelize.define('PolicyAuditLog', {
   timestamps: false
 }) : null;
 
+// B-Integrity: snapshot of |M| (e.g. document count) per research cycle
+const IntegrityCycleSnapshot = sequelize ? sequelize.define('IntegrityCycleSnapshot', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  session_id: {
+    type: DataTypes.UUID,
+    allowNull: false
+  },
+  stage: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  cycle_index: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  },
+  metric_name: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'document_count'
+  },
+  metric_value: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  details: {
+    type: DataTypes.JSONB,
+    allowNull: true
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'integrity_cycle_snapshots',
+  timestamps: false
+}) : null;
+
+// B-Integrity: violation record – when present and unresolved, gate is locked for that session
+const Violation = sequelize ? sequelize.define('Violation', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  session_id: {
+    type: DataTypes.UUID,
+    allowNull: false
+  },
+  type: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'B_INTEGRITY'
+  },
+  reason: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  details: {
+    type: DataTypes.JSONB,
+    allowNull: true
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  },
+  resolved_at: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  resolved_by: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  resolve_note: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  }
+}, {
+  tableName: 'violations',
+  timestamps: false
+}) : null;
+
 // Initialize database
 async function initDb() {
   if (!sequelize) {
@@ -300,6 +387,8 @@ export {
   ResearchSession,
   ResearchAuditLog,
   PolicyAuditLog,
+  IntegrityCycleSnapshot,
+  Violation,
   STAGES_ORDER,
   sequelize,
   initDb,

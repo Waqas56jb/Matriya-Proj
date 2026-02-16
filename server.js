@@ -20,6 +20,7 @@ import {
   HARD_STOP_MESSAGE,
   stripSuggestions
 } from './researchGate.js';
+import { runAfterCycle } from './integrityMonitor.js';
 import logger from './logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -461,6 +462,14 @@ app.get("/search", async (req, res) => {
       }
 
       await logAudit(responseSessionId, stage, responseType, query);
+
+      // B-Integrity Monitor: after each research cycle (stage L completed), record snapshot and run checks
+      if (stage === 'L') {
+        runAfterCycle(responseSessionId, 'L', async () => {
+          const info = await getRagService().getCollectionInfo();
+          return (info && info.document_count) || 0;
+        }).catch(e => logger.warn(`B-Integrity runAfterCycle failed: ${e.message}`));
+      }
 
       if (SearchHistory) {
         try {

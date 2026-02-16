@@ -1,8 +1,10 @@
 /**
  * Stage 1 – Research FSM Gate (FSCTM)
  * Enforces: K→C→B→N→L only. No skip. Gate rules per stage.
+ * When an active B-Integrity Violation exists for the session, the gate is locked.
  */
 import { ResearchSession, ResearchAuditLog, STAGES_ORDER } from './database.js';
+import { getActiveViolation } from './integrityMonitor.js';
 import logger from './logger.js';
 
 const VALID_STAGES = new Set(STAGES_ORDER);
@@ -78,6 +80,15 @@ export async function validateAndAdvance(sessionId, stage, userId = null) {
   }
   if (!sessionId) {
     return { ok: false, error: 'session_id is required. Create a session via POST /research/session first.' };
+  }
+  const violation = await getActiveViolation(sessionId);
+  if (violation) {
+    return {
+      ok: false,
+      error: `Session locked due to B-Integrity violation (${violation.reason || violation.type}). Use Recovery API to resolve.`,
+      violation_id: violation.id,
+      research_gate_locked: true
+    };
   }
   const data = await getSession(sessionId);
   if (!data) {

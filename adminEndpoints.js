@@ -1,8 +1,9 @@
 /**
- * Admin endpoints for file management and user permissions
+ * Admin endpoints for file management, user permissions, and B-Integrity Recovery
  */
 import express from 'express';
-import { User, FilePermission, SearchHistory } from './database.js';
+import { Op } from 'sequelize';
+import { User, FilePermission, SearchHistory, Violation, IntegrityCycleSnapshot } from './database.js';
 import { getCurrentUser } from './authEndpoints.js';
 import RAGService from './ragService.js';
 import logger from './logger.js';
@@ -211,6 +212,179 @@ router.get("/search-history", verifyAdmin, async (req, res) => {
   } catch (e) {
     logger.error(`Error getting search history: ${e.message}`);
     return res.status(500).json({ error: `Error getting search history: ${e.message}` });
+  }
+});
+
+// ---------- B-Integrity Recovery API ----------
+
+/**
+ * Dashboard data for B-Integrity: status, chart series, violations. Admin only.
+ */
+router.get("/recovery/dashboard", verifyAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+    let currentM = 0;
+    try {
+      const info = await getRagService().getCollectionInfo();
+      currentM = (info && info.document_count) || 0;
+    } catch (e) {
+      logger.warn(`Dashboard getCollectionInfo failed: ${e.message}`);
+    }
+
+    let totalCycles = 0;
+    let chartPoints = [];
+    let lastResolvedAt = null;
+
+    if (IntegrityCycleSnapshot) {
+      const countResult = await IntegrityCycleSnapshot.count();
+      totalCycles = countResult || 0;
+      const snapshots = await IntegrityCycleSnapshot.findAll({
+        order: [['created_at', 'ASC']],
+        limit
+      });
+      chartPoints = snapshots.map(s => ({
+        t: s.created_at ? s.created_at.toISOString() : null,
+        value: s.metric_value,
+        session_id: s.session_id,
+        cycle_index: s.cycle_index
+      }));
+    }
+
+    let violationsList = [];
+    let activeCount = 0;
+
+    if (Violation) {
+      const allViolations = await Violation.findAll({
+        order: [['created_at', 'DESC']],
+        limit: 100
+      });
+      violationsList = allViolations.map(v => ({
+        id: v.id,
+        session_id: v.session_id,
+        type: v.type,
+        reason: v.reason,
+        details: v.details,
+        created_at: v.created_at ? v.created_at.toISOString() : null,
+        resolved_at: v.resolved_at ? v.resolved_at.toISOString() : null,
+        resolved_by: v.resolved_by,
+        resolve_note: v.resolve_note
+      }));
+      const resolved = allViolations.filter(v => v.resolved_at);
+      if (resolved.length > 0) {
+        const latest = resolved.reduce((a, b) => (a.resolved_at > b.resolved_at ? a : b));
+        lastResolvedAt = latest.resolved_at ? latest.resolved_at.toISOString() : null;
+      }
+      activeCount = allViolations.filter(v => !v.resolved_at).length;
+    }
+
+    let cyclesSinceLastClosure = totalCycles;
+    if (lastResolvedAt && IntegrityCycleSnapshot) {
+      const afterClosure = await IntegrityCycleSnapshot.count({
+        where: { created_at: { [Op.gt]: new Date(lastResolvedAt) } }
+      });
+      cyclesSinceLastClosure = afterClosure;
+    }
+
+    let gateStatus = 'HEALTHY';
+    if (activeCount > 0) gateStatus = 'HALTED';
+    else if (violationsList.some(v => v.resolved_at)) gateStatus = 'RECOVERY';
+
+    const chartViolations = (violationsList || []).filter(v => v.created_at).map(v => ({
+      id: v.id,
+      t: v.created_at,
+      reason: v.reason
+    }));
+
+    return res.json({
+      gate_status: gateStatus,
+      current_cycle: totalCycles,
+      current_m: currentM,
+      cycles_since_last_closure: cyclesSinceLastClosure,
+      chart: {
+        points: chartPoints,
+        violations: chartViolations
+      },
+      violations: violationsList
+    });
+  } catch (e) {
+    logger.error(`Error getting recovery dashboard: ${e.message}`);
+    return res.status(500).json({ error: `Error getting recovery dashboard: ${e.message}` });
+  }
+});
+
+/**
+ * List violations (active and/or resolved). Admin only.
+ * Query: ?active_only=true to see only unresolved.
+ */
+router.get("/recovery/violations", verifyAdmin, async (req, res) => {
+  try {
+    if (!Violation) {
+      return res.json({ violations: [], count: 0 });
+    }
+    const activeOnly = req.query.active_only === 'true';
+    const where = activeOnly ? { resolved_at: null } : {};
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const violations = await Violation.findAll({
+      where,
+      order: [['created_at', 'DESC']],
+      limit
+    });
+    return res.json({
+      violations: violations.map(v => ({
+        id: v.id,
+        session_id: v.session_id,
+        type: v.type,
+        reason: v.reason,
+        details: v.details,
+        created_at: v.created_at ? v.created_at.toISOString() : null,
+        resolved_at: v.resolved_at ? v.resolved_at.toISOString() : null,
+        resolved_by: v.resolved_by,
+        resolve_note: v.resolve_note
+      })),
+      count: violations.length
+    });
+  } catch (e) {
+    logger.error(`Error listing violations: ${e.message}`);
+    return res.status(500).json({ error: `Error listing violations: ${e.message}` });
+  }
+});
+
+/**
+ * Resolve a violation (release lock for that session). Admin only.
+ * Body: { resolve_note?: string }
+ */
+router.patch("/recovery/violations/:id", verifyAdmin, async (req, res) => {
+  try {
+    if (!Violation) return res.status(503).json({ error: "Violations storage not available" });
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid violation id" });
+    const violation = await Violation.findByPk(id);
+    if (!violation) return res.status(404).json({ error: "Violation not found" });
+    if (violation.resolved_at) {
+      return res.json({
+        success: true,
+        message: "Violation already resolved",
+        violation_id: violation.id,
+        session_id: violation.session_id
+      });
+    }
+    const resolveNote = req.body?.resolve_note || null;
+    const userId = req.user?.id ?? null;
+    await violation.update({
+      resolved_at: new Date(),
+      resolved_by: userId,
+      resolve_note: resolveNote
+    });
+    return res.json({
+      success: true,
+      message: "Violation resolved; gate unlocked for session",
+      violation_id: violation.id,
+      session_id: violation.session_id,
+      resolved_at: violation.resolved_at?.toISOString?.() || null
+    });
+  } catch (e) {
+    logger.error(`Error resolving violation: ${e.message}`);
+    return res.status(500).json({ error: `Error resolving violation: ${e.message}` });
   }
 });
 

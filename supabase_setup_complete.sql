@@ -93,6 +93,34 @@ CREATE TABLE IF NOT EXISTS research_audit_log (
 CREATE INDEX IF NOT EXISTS research_audit_log_session_id_idx ON research_audit_log(session_id);
 CREATE INDEX IF NOT EXISTS research_audit_log_created_at_idx ON research_audit_log(created_at);
 
+-- Step 12: B-Integrity Monitor – cycle snapshots and violations
+CREATE TABLE IF NOT EXISTS integrity_cycle_snapshots (
+    id SERIAL PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES research_sessions(id) ON DELETE CASCADE,
+    stage VARCHAR(10) NOT NULL,
+    cycle_index INTEGER NOT NULL DEFAULT 0,
+    metric_name VARCHAR(50) NOT NULL DEFAULT 'document_count',
+    metric_value INTEGER NOT NULL,
+    details JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS integrity_cycle_snapshots_session_id_idx ON integrity_cycle_snapshots(session_id);
+CREATE INDEX IF NOT EXISTS integrity_cycle_snapshots_created_at_idx ON integrity_cycle_snapshots(created_at);
+
+CREATE TABLE IF NOT EXISTS violations (
+    id SERIAL PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES research_sessions(id) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL DEFAULT 'B_INTEGRITY',
+    reason TEXT,
+    details JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP,
+    resolved_by INTEGER,
+    resolve_note TEXT
+);
+CREATE INDEX IF NOT EXISTS violations_session_id_idx ON violations(session_id);
+CREATE INDEX IF NOT EXISTS violations_resolved_at_idx ON violations(resolved_at);
+
 -- ============================================================================
 -- Verification Queries (optional - run to check everything is set up)
 -- ============================================================================
