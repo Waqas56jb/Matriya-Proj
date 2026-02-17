@@ -121,6 +121,20 @@ CREATE TABLE IF NOT EXISTS violations (
 CREATE INDEX IF NOT EXISTS violations_session_id_idx ON violations(session_id);
 CREATE INDEX IF NOT EXISTS violations_resolved_at_idx ON violations(resolved_at);
 
+-- Step 13: Research Loop MVP – runs of the 4-agent loop
+CREATE TABLE IF NOT EXISTS research_loop_runs (
+    id SERIAL PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES research_sessions(id) ON DELETE CASCADE,
+    query TEXT NOT NULL,
+    outputs JSONB DEFAULT '{}',
+    justifications JSONB DEFAULT '[]',
+    stopped_by_violation BOOLEAN NOT NULL DEFAULT FALSE,
+    violation_id INTEGER REFERENCES violations(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS research_loop_runs_session_id_idx ON research_loop_runs(session_id);
+CREATE INDEX IF NOT EXISTS research_loop_runs_created_at_idx ON research_loop_runs(created_at);
+
 -- ============================================================================
 -- Verification Queries (optional - run to check everything is set up)
 -- ============================================================================

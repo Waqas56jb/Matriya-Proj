@@ -21,6 +21,7 @@ import {
   stripSuggestions
 } from './researchGate.js';
 import { runAfterCycle } from './integrityMonitor.js';
+import { runLoop } from './researchLoop.js';
 import logger from './logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -519,6 +520,56 @@ app.get("/search", async (req, res) => {
     return res.status(500).json({
       error: `Error searching: ${e.message}`
     });
+  }
+});
+
+/**
+ * Research run: either 4-agent loop (use_4_agents: true) or current single-shot flow (use_4_agents: false).
+ * POST /api/research/run
+ * Body: { session_id, query, use_4_agents?: boolean } (default use_4_agents: true for this endpoint)
+ */
+app.post("/api/research/run", async (req, res) => {
+  try {
+    const { session_id: sessionId, query, use_4_agents: use4Agents = true, filename } = req.body || {};
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'query is required' });
+    }
+    if (!sessionId) {
+      return res.status(400).json({ error: 'session_id is required for research run' });
+    }
+    const session = await ResearchSession.findByPk(sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const filterMetadata = (filename && typeof filename === 'string') ? { filename } : null;
+
+    if (use4Agents) {
+      const result = await runLoop(sessionId, query.trim(), getRagService(), filterMetadata);
+      if (result.error) {
+        return res.status(500).json({ error: result.error, outputs: result.outputs || {}, justifications: result.justifications || [] });
+      }
+      return res.json({
+        run_id: result.run_id,
+        outputs: result.outputs,
+        justifications: result.justifications
+      });
+    }
+
+    const kernel = getKernel();
+    const kernelResult = await kernel.processUserIntent(query.trim(), null, null, null);
+    return res.json({
+      use_4_agents: false,
+      decision: kernelResult.decision,
+      state: kernelResult.state,
+      answer: kernelResult.answer,
+      reason: kernelResult.reason,
+      context: kernelResult.context,
+      agent_results: kernelResult.agent_results
+    });
+  } catch (e) {
+    logger.error(`Research run error: ${e.message}`);
+    return res.status(500).json({ error: e.message });
   }
 });
 

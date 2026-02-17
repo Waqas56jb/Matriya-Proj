@@ -350,6 +350,49 @@ const Violation = sequelize ? sequelize.define('Violation', {
   timestamps: false
 }) : null;
 
+// Research Loop MVP: one run of the 4-agent loop (analysis → research → critic → synthesis)
+const ResearchLoopRun = sequelize ? sequelize.define('ResearchLoopRun', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  session_id: {
+    type: DataTypes.UUID,
+    allowNull: false
+  },
+  query: {
+    type: DataTypes.TEXT,
+    allowNull: false
+  },
+  outputs: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    defaultValue: {}
+  },
+  justifications: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    defaultValue: []
+  },
+  stopped_by_violation: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  violation_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'research_loop_runs',
+  timestamps: false
+}) : null;
+
 // Initialize database
 async function initDb() {
   if (!sequelize) {
@@ -389,6 +432,7 @@ export {
   PolicyAuditLog,
   IntegrityCycleSnapshot,
   Violation,
+  ResearchLoopRun,
   STAGES_ORDER,
   sequelize,
   initDb,
