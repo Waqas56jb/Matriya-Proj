@@ -6,7 +6,15 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "check:task3": "node scripts/check-snapshots.js",
+    "check:task4": "node scripts/check-global-metrics.js",
+    "check:task5": "node scripts/check-recovery-improved.js",
+    "check:task6": "node scripts/check-justification-templates.js",
+    "check:task7": "node scripts/check-doe-integration.js",
+    "check:task8": "node scripts/check-risk-oracle.js",
+    "check:task2": "node scripts/check-integrity-rules-engine.js",
+    "check:dashboard": "node scripts/check-dashboard-improvements.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

@@ -1,10 +1,11 @@
 /**
  * Research Loop MVP – fixed 4-agent chain: analysis → research → critic → synthesis.
  * After each agent: save output, create Justification if change.
- * No Integrity Monitor in this path (no K/C/B/N/L snapshots or violation checks) – just the 4 agents.
+ * Justification labels/descriptions come from justification templates when available.
  */
 import logger from './logger.js';
 import { ResearchLoopRun } from './database.js';
+import { getJustificationDisplay } from './justificationTemplates.js';
 
 const AGENT_ORDER = ['analysis', 'research', 'critic', 'synthesis'];
 
@@ -97,10 +98,14 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
     const out = (output || '').trim();
     outputs[agentName] = out;
     if (previousOutput !== null && out !== previousOutput) {
+      const reasonCode = 'output_changed';
+      const ctx = { agent: agentName, previous_snippet: String(previousOutput).slice(0, 200) };
+      const display = await getJustificationDisplay(reasonCode, ctx);
       justifications.push({
         agent: agentName,
-        reason: 'output_changed',
-        previous_snippet: String(previousOutput).slice(0, 200),
+        reason: reasonCode,
+        ...display,
+        previous_snippet: ctx.previous_snippet,
         created_at: new Date().toISOString()
       });
     }

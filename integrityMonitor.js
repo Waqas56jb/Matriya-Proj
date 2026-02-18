@@ -1,17 +1,17 @@
 /**
  * B-Integrity Monitor – runs after each research cycle.
- * Checks: |𝓜| growth without justification, decrease without structural change, no progress over cycles.
- * If a problem is detected → creates a Violation (locks the gate for that session).
+ * Uses the Integrity Rules Engine: conditions (growth, decrease, no_progress, metric_above, etc.) and actions (create_violation).
+ * If a rule fires → creates a Violation (locks the gate for that session).
  */
 import { IntegrityCycleSnapshot, Violation } from './database.js';
+import { getDefaultRules, buildContextFromSnapshots, runRules } from './integrityRulesEngine.js';
 import logger from './logger.js';
 
 const VIOLATION_TYPE = 'B_INTEGRITY';
 
-/** Default thresholds (overridable via env or config later) */
-const MAX_GROWTH_RATIO = parseFloat(process.env.B_INTEGRITY_MAX_GROWTH_RATIO) || 0.5;  // 50% growth per cycle = suspect
-const NO_PROGRESS_CYCLES = parseInt(process.env.B_INTEGRITY_NO_PROGRESS_CYCLES, 10) || 3;
+/** Minimum snapshots required to run any rule (at least current + previous) */
 const MIN_SNAPSHOTS_FOR_CHECK = 2;
+const NO_PROGRESS_CYCLES = parseInt(process.env.B_INTEGRITY_NO_PROGRESS_CYCLES, 10) || 3;
 
 /**
  * Get active (unresolved) violation for a session, if any.
@@ -71,10 +71,8 @@ export async function createViolation(sessionId, reason, details = null) {
 }
 
 /**
- * Run integrity checks on the last N snapshots for this session.
- * - Growth: current metric > previous * (1 + MAX_GROWTH_RATIO) → violation "unjustified_growth"
- * - Decrease: current < previous (no structural change flag) → violation "unexplained_decrease"
- * - No progress: last NO_PROGRESS_CYCLES snapshots have same metric_value → violation "no_progress"
+ * Run integrity checks via the Rules Engine on the last N snapshots for this session.
+ * Rules (e.g. unjustified_growth, unexplained_decrease, no_progress, metric_cap_exceeded, large_drop) are evaluated in order.
  * @param {string} sessionId
  * @returns {Promise<boolean>} true if a violation was created
  */
@@ -86,50 +84,12 @@ export async function runIntegrityCheck(sessionId) {
     order: [['created_at', 'DESC']],
     limit
   });
-  if (snapshots.length < MIN_SNAPSHOTS_FOR_CHECK) return false;
+  const context = buildContextFromSnapshots(snapshots);
+  if (!context) return false;
 
-  const current = snapshots[0];
-  const previous = snapshots[1];
-  const metricCurrent = current.metric_value;
-  const metricPrevious = previous.metric_value;
-
-  // 1) Unjustified growth
-  const growthThreshold = metricPrevious * (1 + MAX_GROWTH_RATIO);
-  if (metricCurrent > growthThreshold) {
-    await createViolation(sessionId, 'unjustified_growth', {
-      metric_value: metricCurrent,
-      previous_value: metricPrevious,
-      threshold: growthThreshold
-    });
-    return true;
-  }
-
-  // 2) Unexplained decrease (no structural change recorded in details)
-  if (metricCurrent < metricPrevious) {
-    const structuralChange = current.details && current.details.structural_change === true;
-    if (!structuralChange) {
-      await createViolation(sessionId, 'unexplained_decrease', {
-        metric_value: metricCurrent,
-        previous_value: metricPrevious
-      });
-      return true;
-    }
-  }
-
-  // 3) No progress over last NO_PROGRESS_CYCLES
-  const forNoProgress = snapshots.slice(0, NO_PROGRESS_CYCLES);
-  if (forNoProgress.length >= NO_PROGRESS_CYCLES) {
-    const allSame = forNoProgress.every(s => s.metric_value === metricCurrent);
-    if (allSame && metricCurrent > 0) {
-      await createViolation(sessionId, 'no_progress', {
-        metric_value: metricCurrent,
-        cycles: NO_PROGRESS_CYCLES
-      });
-      return true;
-    }
-  }
-
-  return false;
+  const rules = getDefaultRules();
+  const result = await runRules(rules, context, { createViolation }, sessionId);
+  return result.fired;
 }
 
 /**

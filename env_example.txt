@@ -9,7 +9,7 @@ POSTGRES_URL=postgres://postgres.[PROJECT_REF]:[PASSWORD]@aws-1-[REGION].pooler.
 SUPABASE_URL=https://[PROJECT].supabase.co
 SUPABASE_KEY=your-supabase-anon-key
 
-# Embedding Model
+# Embedding Modelc
 EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 
 # LLM Provider - Together AI (recommended)

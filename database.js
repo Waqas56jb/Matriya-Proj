@@ -350,6 +350,43 @@ const Violation = sequelize ? sequelize.define('Violation', {
   timestamps: false
 }) : null;
 
+// System Snapshots: save/restore state (e.g. integrity data)
+const SystemSnapshot = sequelize ? sequelize.define('SystemSnapshot', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  description: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  snapshot_type: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'integrity'
+  },
+  payload: {
+    type: DataTypes.JSONB,
+    allowNull: false
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  },
+  created_by: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  }
+}, {
+  tableName: 'system_snapshots',
+  timestamps: false
+}) : null;
+
 // Research Loop MVP: one run of the 4-agent loop (analysis → research → critic → synthesis)
 const ResearchLoopRun = sequelize ? sequelize.define('ResearchLoopRun', {
   id: {
@@ -393,6 +430,84 @@ const ResearchLoopRun = sequelize ? sequelize.define('ResearchLoopRun', {
   timestamps: false
 }) : null;
 
+// Justification templates: reason_code → label/description for research loop justifications
+const JustificationTemplate = sequelize ? sequelize.define('JustificationTemplate', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  reason_code: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true
+  },
+  label: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  description: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  template_text: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  },
+  updated_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'justification_templates',
+  timestamps: false
+}) : null;
+
+// DoE (Design of Experiments): store designs for integration with DoE tools
+const DoEDesign = sequelize ? sequelize.define('DoEDesign', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  description: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  design: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: []
+  },
+  query_template: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  },
+  updated_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'doe_designs',
+  timestamps: false
+}) : null;
+
 // Initialize database
 async function initDb() {
   if (!sequelize) {
@@ -432,7 +547,10 @@ export {
   PolicyAuditLog,
   IntegrityCycleSnapshot,
   Violation,
+  SystemSnapshot,
   ResearchLoopRun,
+  JustificationTemplate,
+  DoEDesign,
   STAGES_ORDER,
   sequelize,
   initDb,

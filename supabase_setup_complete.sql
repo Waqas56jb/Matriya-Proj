@@ -121,6 +121,19 @@ CREATE TABLE IF NOT EXISTS violations (
 CREATE INDEX IF NOT EXISTS violations_session_id_idx ON violations(session_id);
 CREATE INDEX IF NOT EXISTS violations_resolved_at_idx ON violations(resolved_at);
 
+-- Step 12b: System Snapshots – save/restore integrity state
+CREATE TABLE IF NOT EXISTS system_snapshots (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    snapshot_type VARCHAR(50) NOT NULL DEFAULT 'integrity',
+    payload JSONB NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER
+);
+CREATE INDEX IF NOT EXISTS system_snapshots_created_at_idx ON system_snapshots(created_at DESC);
+CREATE INDEX IF NOT EXISTS system_snapshots_snapshot_type_idx ON system_snapshots(snapshot_type);
+
 -- Step 13: Research Loop MVP – runs of the 4-agent loop
 CREATE TABLE IF NOT EXISTS research_loop_runs (
     id SERIAL PRIMARY KEY,
@@ -135,6 +148,31 @@ CREATE TABLE IF NOT EXISTS research_loop_runs (
 CREATE INDEX IF NOT EXISTS research_loop_runs_session_id_idx ON research_loop_runs(session_id);
 CREATE INDEX IF NOT EXISTS research_loop_runs_created_at_idx ON research_loop_runs(created_at);
 
+-- Step 14: Justification templates (labels/descriptions for research loop justifications)
+CREATE TABLE IF NOT EXISTS justification_templates (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    reason_code VARCHAR(100) NOT NULL UNIQUE,
+    label VARCHAR(255),
+    description TEXT,
+    template_text TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS justification_templates_reason_code_idx ON justification_templates(reason_code);
+
+-- Step 15: DoE designs (Design of Experiments integration)
+CREATE TABLE IF NOT EXISTS doe_designs (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    design JSONB NOT NULL DEFAULT '[]',
+    query_template TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS doe_designs_created_at_idx ON doe_designs(created_at DESC);
+
 -- ============================================================================
 -- Verification Queries (optional - run to check everything is set up)
 -- ============================================================================
@@ -144,7 +182,7 @@ CREATE INDEX IF NOT EXISTS research_loop_runs_created_at_idx ON research_loop_ru
 
 -- Check if tables exist:
 -- SELECT table_name FROM information_schema.tables 
--- WHERE table_schema = 'public' AND table_name IN ('users', 'documents', 'file_permissions', 'search_history', 'research_sessions', 'research_audit_log');
+-- WHERE table_schema = 'public' AND table_name IN ('users', 'documents', 'file_permissions', 'search_history', 'research_sessions', 'research_audit_log', 'integrity_cycle_snapshots', 'violations', 'system_snapshots', 'research_loop_runs', 'justification_templates', 'doe_designs');
 
 -- Check if indexes exist:
 -- SELECT indexname FROM pg_indexes 
