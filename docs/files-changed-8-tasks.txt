@@ -1,0 +1,52 @@
+FILES CHANGED SINCE WE STARTED THE 8 TASKS
+===========================================
+
+BACK (19): adminEndpoints.js, database.js, env_example.txt, integrityMonitor.js, integrityRulesEngine.js, justificationTemplates.js, package.json, researchLoop.js, riskOracle.js, scripts/check-dashboard-improvements.js, scripts/check-doe-integration.js, scripts/check-global-metrics.js, scripts/check-integrity-rules-engine.js, scripts/check-justification-templates.js, scripts/check-recovery-improved.js, scripts/check-risk-oracle.js, scripts/check-snapshots.js, supabase_setup_complete.sql
+
+FRONT (4): vercel.json, src/components/AdminTab.css, src/components/AdminTab.js, src/components/SearchTab.js
+
+---
+DETAIL
+---
+
+MATRIYA-BACK (commit 10cb761 → feff0ee)
+---------------------------------------
+adminEndpoints.js
+database.js
+env_example.txt
+integrityMonitor.js
+integrityRulesEngine.js
+justificationTemplates.js
+package.json
+researchLoop.js
+riskOracle.js
+scripts/check-dashboard-improvements.js
+scripts/check-doe-integration.js
+scripts/check-global-metrics.js
+scripts/check-integrity-rules-engine.js
+scripts/check-justification-templates.js
+scripts/check-recovery-improved.js
+scripts/check-risk-oracle.js
+scripts/check-snapshots.js
+supabase_setup_complete.sql
+
+MATRIYA-FRONT (from 8-tasks dashboard + fixes)
+-----------------------------------------------
+vercel.json
+src/components/AdminTab.css
+src/components/AdminTab.js
+src/components/SearchTab.js
+
+NEW FILES (back, in same period)
+--------------------------------
+integrityRulesEngine.js
+justificationTemplates.js
+riskOracle.js
+scripts/check-dashboard-improvements.js
+scripts/check-doe-integration.js
+scripts/check-global-metrics.js
+scripts/check-integrity-rules-engine.js
+scripts/check-justification-templates.js
+scripts/check-recovery-improved.js
+scripts/check-risk-oracle.js
+scripts/check-snapshots.js

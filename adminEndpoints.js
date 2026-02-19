@@ -1008,6 +1008,38 @@ router.get("/recovery/violations", verifyAdmin, async (req, res) => {
 });
 
 /**
+ * Create a test violation for a session (locks the gate). Admin only.
+ * Body: { session_id: string, reason?: string, details?: object }
+ * Used for proof/testing: create violation → GET /search and POST /api/research/run return locked → resolve → both work again.
+ */
+router.post("/recovery/violations", verifyAdmin, async (req, res) => {
+  try {
+    if (!Violation) return res.status(503).json({ error: "Violations storage not available" });
+    const sessionId = req.body?.session_id?.trim?.();
+    if (!sessionId) return res.status(400).json({ error: "session_id is required" });
+    const reason = req.body?.reason?.trim?.() || 'B_INTEGRITY';
+    const details = req.body?.details ?? null;
+    const violation = await Violation.create({
+      session_id: sessionId,
+      type: 'B_INTEGRITY',
+      reason,
+      details: details ? (typeof details === 'object' ? details : { raw: details }) : null,
+      resolved_at: null
+    });
+    logger.info(`Recovery: created test violation ${violation.id} for session ${sessionId}`);
+    return res.status(201).json({
+      violation_id: violation.id,
+      session_id: violation.session_id,
+      reason: violation.reason,
+      message: "Violation created; gate locked for this session"
+    });
+  } catch (e) {
+    logger.error(`Error creating violation: ${e.message}`);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/**
  * Resolve all active violations (bulk recovery). Admin only.
  * Body: { resolve_note?: string, session_id?: string } – optional session_id to resolve only that session's violations.
  */
@@ -1079,6 +1111,61 @@ router.patch("/recovery/violations/:id", verifyAdmin, async (req, res) => {
   } catch (e) {
     logger.error(`Error resolving violation: ${e.message}`);
     return res.status(500).json({ error: `Error resolving violation: ${e.message}` });
+  }
+});
+
+/**
+ * Value report summary for governance: runs, successes, hard stops, violations by type, recoveries.
+ * GET /admin/reports/value-summary (admin only)
+ */
+router.get("/reports/value-summary", verifyAdmin, async (req, res) => {
+  try {
+    const totalRuns = ResearchLoopRun
+      ? await ResearchLoopRun.count().catch(() => 0)
+      : 0;
+    const stoppedByViolation = ResearchLoopRun
+      ? await ResearchLoopRun.count({ where: { stopped_by_violation: true } }).catch(() => 0)
+      : 0;
+    const successfulRuns = totalRuns - stoppedByViolation;
+
+    const violations = Violation
+      ? await Violation.findAll({ attributes: ['reason', 'resolved_at'], raw: true }).catch(() => [])
+      : [];
+    const byReason = {};
+    let resolvedCount = 0;
+    for (const v of violations) {
+      const r = (v.reason || 'B_INTEGRITY');
+      byReason[r] = (byReason[r] || 0) + 1;
+      if (v.resolved_at) resolvedCount += 1;
+    }
+
+    let durationStats = null;
+    if (ResearchLoopRun) {
+      const withDuration = await ResearchLoopRun.findAll({
+        attributes: ['duration_ms'],
+        where: { duration_ms: { [Op.ne]: null } },
+        raw: true
+      }).catch(() => []);
+      const values = withDuration.map(r => r.duration_ms).filter(n => typeof n === 'number');
+      if (values.length > 0) {
+        durationStats = {
+          avg_ms: Math.round(values.reduce((a, b) => a + b, 0) / values.length),
+          min_ms: Math.min(...values),
+          max_ms: Math.max(...values),
+          count: values.length
+        };
+      }
+    }
+
+    return res.json({
+      runs: { total: totalRuns, successful: successfulRuns, stopped_by_violation: stoppedByViolation },
+      violations_by_reason: byReason,
+      recoveries: { total_resolved: resolvedCount },
+      duration_ms: durationStats
+    });
+  } catch (e) {
+    logger.error(`Error building value summary: ${e.message}`);
+    return res.status(500).json({ error: e.message });
   }
 });
 

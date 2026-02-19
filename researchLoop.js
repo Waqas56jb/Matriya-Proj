@@ -64,6 +64,7 @@ async function runAgent(agentName, query, previousOutput, ragService, ragContext
  * @returns {Promise<{ run_id, outputs, justifications, error? }>}
  */
 export async function runLoop(sessionId, query, ragService, filterMetadata = null) {
+  const startMs = Date.now();
   const outputs = {};
   const justifications = [];
 
@@ -112,15 +113,17 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
     previousOutput = out;
   }
 
-  const runRecord = await saveRun(sessionId, query, outputs, justifications, false, null);
+  const durationMs = Date.now() - startMs;
+  const runRecord = await saveRun(sessionId, query, outputs, justifications, false, null, durationMs);
   return {
     run_id: runRecord?.id ?? null,
     outputs,
-    justifications
+    justifications,
+    duration_ms: durationMs
   };
 }
 
-async function saveRun(sessionId, query, outputs, justifications) {
+async function saveRun(sessionId, query, outputs, justifications, stoppedByViolation = false, violationId = null, durationMs = null) {
   if (!ResearchLoopRun) return null;
   try {
     const run = await ResearchLoopRun.create({
@@ -128,8 +131,9 @@ async function saveRun(sessionId, query, outputs, justifications) {
       query,
       outputs: outputs || {},
       justifications: justifications || [],
-      stopped_by_violation: false,
-      violation_id: null
+      stopped_by_violation: stoppedByViolation,
+      violation_id: violationId,
+      duration_ms: durationMs
     });
     return run;
   } catch (e) {

@@ -421,6 +421,10 @@ const ResearchLoopRun = sequelize ? sequelize.define('ResearchLoopRun', {
     type: DataTypes.INTEGER,
     allowNull: true
   },
+  duration_ms: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
   created_at: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW

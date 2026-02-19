@@ -20,7 +20,7 @@ import {
   HARD_STOP_MESSAGE,
   stripSuggestions
 } from './researchGate.js';
-import { runAfterCycle } from './integrityMonitor.js';
+import { runAfterCycle, getActiveViolation } from './integrityMonitor.js';
 import { runLoop } from './researchLoop.js';
 import logger from './logger.js';
 
@@ -387,7 +387,8 @@ app.get("/search", async (req, res) => {
       if (!gate.ok) {
         return res.status(400).json({
           error: gate.error,
-          research_stage_error: true
+          research_stage_error: true,
+          ...(gate.research_gate_locked && { research_gate_locked: true, violation_id: gate.violation_id })
         });
       }
       const responseSessionId = gate.session.id;
@@ -540,6 +541,15 @@ app.post("/api/research/run", async (req, res) => {
     const session = await ResearchSession.findByPk(sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const violation = await getActiveViolation(sessionId);
+    if (violation) {
+      return res.status(409).json({
+        error: `Session locked due to B-Integrity violation (${violation.reason || violation.type}). Use Recovery API to resolve.`,
+        research_gate_locked: true,
+        violation_id: violation.id
+      });
     }
 
     const filterMetadata = (filename && typeof filename === 'string') ? { filename } : null;

@@ -143,10 +143,12 @@ CREATE TABLE IF NOT EXISTS research_loop_runs (
     justifications JSONB DEFAULT '[]',
     stopped_by_violation BOOLEAN NOT NULL DEFAULT FALSE,
     violation_id INTEGER REFERENCES violations(id) ON DELETE SET NULL,
+    duration_ms INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS research_loop_runs_session_id_idx ON research_loop_runs(session_id);
 CREATE INDEX IF NOT EXISTS research_loop_runs_created_at_idx ON research_loop_runs(created_at);
+-- Migration: if table already exists without duration_ms, run: ALTER TABLE research_loop_runs ADD COLUMN IF NOT EXISTS duration_ms INTEGER;
 
 -- Step 14: Justification templates (labels/descriptions for research loop justifications)
 CREATE TABLE IF NOT EXISTS justification_templates (

@@ -1,0 +1,13 @@
+תשובה – אחרי הרצת השינוי ב-DB
+================================
+
+הרצתי ב-DB את השינוי (הוספת עמודת duration_ms ל-research_loop_runs).
+
+מה זה נותן:
+• דוח value-summary (GET /admin/reports/value-summary) מחזיר עכשיו גם סטטיסטיקות זמן ריצה: ממוצע, מינימום, מקסימום ומספר ריצות עם duration – כך שאפשר להציג בדוחות זמן ריצה אמיתי (למשל avg/min/max).
+
+בנוסף הושלם:
+• נעילת Kernel גם על POST /api/research/run – כשהשער נעול (violation פעיל), גם /search וגם /api/research/run מחזירים 4xx עם research_gate_locked (לא רק /search).
+• סקריפט הוכחה: node scripts/check-kernel-lock.js – יוצר violation, בודק ששניהם נעולים, עושה recovery, ובודק ששניהם חוזרים לעבוד.
+
+אם צריך פרטים טכניים או לוג – אפשר לשלוח.

@@ -1,0 +1,30 @@
+תשובה מלאה – מעבר מ"המערכת עובדת" ל"יתרון מוכח"
+====================================================
+
+1) דוח תוצאות
+   הרצה: node scripts/report-value-summary.js (backend פעיל, admin).
+   מקבלים: סה"כ ריצות, הצלחות, נעצרו ב-Hard Stop, violations לפי סוג (reason), recoveries.
+   זמן ריצה ממוצע: לא נשמר ב-DB כרגע (ניתן להוסיף).
+
+2) מקרי מבחן (3)
+   • unjustified_growth: |M| קפץ >50% → violation → שער ננעל → recovery. בלי Hard Stop: תשובות למרות חריגה.
+   • unexplained_decrease: |M| ירד בלי structural_change → violation → נעילה. בלי: תשובות במצב לא עקבי.
+   • no_progress: |M| זהה 3 מחזורים → violation → נעילה. בלי: אשליית התקדמות.
+
+3) השוואה מבוקרת
+   עם Governance: GET /search – אם violation → 400, בלי תשובה. בלי: POST /api/research/run – תמיד 200, פלט מלא (ה-endpoint לא בודק שער).
+   להריץ אותו תרחיש: סשן → ליצור violation → למדוד /search (400) מול /api/research/run (200) – זמן, יציבות, סטיות.
+
+4) נקודות תורפה
+   לא מזוהים: סחיפה סמנטית, הפרות בין-סשנים, אכיפה על תוכן התשובה, תדירות (רק Oracle, בלי action).
+   עלול לפספס: /api/research/run לא עובר בשער; תלות ב-snapshots; פרמטרים קבועים.
+   חלש: אין duration ב-DB, אין מדד איכות אוטומטי, אין הסבר מפורט למשתמש לפי סוג הפרה.
+
+5) הסבר ערך (עמוד–שניים)
+   בעיה: מערכת מחקר (RAG+LLM) עלולה להמשיך לתת תשובות כשמצב המודל/מחקר יוצא משליטה.
+   פתרון: B-Integrity מודד |M|, כללים (צמיחה/ירידה/חוסר התקדמות) יוצרים violation, השער ננעל ל-GET /search עד recovery.
+   הבדל: בלי Governance – תשובה תמיד. עם – במצב חריג רק הודעת נעילה, בלי תשובה חכמה.
+   דוגמה: |M| קפץ 60% → violation → /search מחזיר 400 ו-research_gate_locked. בלי Hard Stop המשתמש היה ממשיך לקבל תשובות במצב לא תקין.
+
+---
+קבצים מפורטים: docs/value-report-template.txt, docs/test-cases-value.md, docs/controlled-comparison.md, docs/weak-points.md, docs/value-explanation-1-2-pages.md

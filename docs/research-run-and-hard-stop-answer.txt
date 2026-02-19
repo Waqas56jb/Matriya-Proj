@@ -1,0 +1,20 @@
+1) דוגמת JSON מ־POST /api/research/run (תשובה מוצלחת):
+{
+  "run_id": 1,
+  "outputs": {
+    "analysis": "...",
+    "research": "...",
+    "critic": "...",
+    "synthesis": "..."
+  },
+  "justifications": [{ "agent": "research", "reason": "output_changed", "label": "שינוי בפלט", "created_at": "..." }]
+}
+
+2) Hard Stop (violation) – כשהשער נעול, GET /search מחזיר 400:
+{
+  "error": "Session locked due to B-Integrity violation (...). Use Recovery API to resolve.",
+  "research_stage_error": true,
+  "research_gate_locked": true,
+  "violation_id": 42
+}
+שחרור: PATCH /admin/recovery/violations/:id עם resolve_note.

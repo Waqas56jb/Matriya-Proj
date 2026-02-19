@@ -1,0 +1,24 @@
+תשובה – כן, זה בוצע
+========================
+
+כל שלושת הנקודות שציינת בוצעו:
+
+1️⃣ Gate גם על /api/research/run
+   • POST /api/research/run בודק עכשיו violation פעיל (getActiveViolation).
+   • אם יש violation → מחזיר 409 עם research_gate_locked: true ו-violation_id (לא 200).
+
+2️⃣ בדיקת הוכחה אחת
+   • POST /admin/recovery/violations – יוצרים violation לסשן (admin only).
+   • סקריפט: node scripts/check-kernel-lock.js
+     יוצר סשן → יוצר violation → GET /search מחזיר locked → POST /api/research/run מחזיר 409 (locked) → מחזיר violation → שניהם חוזרים ל-200.
+   • אפשר להריץ עם backend פעיל (BASE_URL ברירת מחדל localhost:8000, admin/admin123).
+
+3️⃣ duration_ms לריצות
+   • שדה duration_ms נוסף ל-research_loop_runs (ב-DB, במודל, ב-saveRun).
+   • כל ריצת לופ מודדת זמן ומשמרת.
+   • דוח value-summary (GET /admin/reports/value-summary) מחזיר duration_ms: { avg_ms, min_ms, max_ms, count }.
+
+אם ה-DB היה קיים לפני השינוי – צריך להריץ פעם אחת:
+   ALTER TABLE research_loop_runs ADD COLUMN IF NOT EXISTS duration_ms INTEGER;
+
+סיכום: הבסיס נעול – גם /search וגם /api/research/run עוברים בשער, ויש הוכחה אוטומטית + מדידת זמני ריצה בדוחות.
