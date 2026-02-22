@@ -1,0 +1,116 @@
+5 מיילסטונים – שלבי עבודה
+============================
+שלב־שלב, אישור מפורש לפני כל שלב. בלי חריגות scope.
+
+סקופ: Kernel Lock מלא (כל האנדפוינטים) | Governance (Snapshots + Rules + Recovery) | Dashboard + Metrics (מדדים, פילטרים, ייצוא) | Justification + DoE + Risk Oracle | FIL-01 (patterns מ-violations → warnings בלבד, בלי לגעת ב-Hard Stop).
+בסיס קיים: Research Loop + Integrity + Kernel Lock בשני אנדפוינטים + duration_ms; דוחות ערך ומקרי מבחן.
+
+========================================
+מערכת בקרת מעבדה – מודל נתונים + לוגיקה תפעולית
+========================================
+
+מודל נתונים (מרכזי):
+• research_sessions – סשן מחקר (id, user_id, completed_stages[], created_at, updated_at). completed_stages = שלבים שהושלמו (K,C,B,N,L).
+• research_audit_log – לוג קריאות לפי סשן, stage, response_type, query.
+• integrity_cycle_snapshots – צילום |M| (מטריקה) בסוף כל מחזור/שלב (session_id, stage, metric_name, value, cycle_index, metadata).
+• violations – הפרת B-Integrity (session_id, type, reason, details, resolved_at, resolved_by, resolve_note). violation פעיל (resolved_at=null) → שער נעול.
+• research_loop_runs – ריצת לופ 4-אגנטים (session_id, query, outputs, justifications, stopped_by_violation, violation_id, duration_ms).
+• system_snapshots – גיבויי Governance (snapshots + restore).
+• justification_templates, doe_designs – תבניות הצדקה ועיצובי DoE.
+
+לוגיקה תפעולית:
+• שער שלבים (FSM): K→C→B→N→L בלבד, בלי דילוג. כל קריאה ל-/search עם session_id + stage עוברת validateAndAdvance.
+• B: Hard Stop – רק הודעת נעילה, בלי תשובה חכמה. K/C: info only. N/L: תשובה מלאה.
+• אם יש violation פעיל לסשן: השער נעול – /search ו-/api/research/run מחזירים 4xx עם research_gate_locked, violation_id. עד resolve (Recovery) אין המשך.
+• אחרי כל מחזור רלוונטי: צילום Integrity (|M|) והרצת כללים (Rules). הפרה → createViolation → נעילה.
+• Recovery: resolve violation (בודד או resolve-all), אופציונלית restore מ-system_snapshot / rollback.
+
+========================================
+מיילסטונים + לו״ז + Definition of Done
+========================================
+
+---
+1. Kernel Lock + Governance
+---
+פעולות: מיפוי ואימות – כל האנדפוינטים הרלוונטיים עוברים gate, אין bypass. Hardening ל-Recovery (flows, הרשאות, לוגים). מסמך Governance.
+תוצר: רשימת אנדפוינטים מאומתים, בדיקות אוטומטיות, מסמך.
+
+לו״ז משוער:ת.
+
+Definition of Done:
+• רשימת אנדפוינטים שצריכים gate מאומתת ומתועדת.
+• /search ו-/api/research/run (וכל רלוונטי) מחזירים 409 + research_gate_locked כשיש violation; סקריפט check-kernel-lock עובר.
+• Recovery: flows מתועדים, הרשאות admin, לוגים לפעולות.
+• מסמך "Governance – סטטוס ואופן שימוש" מאושר.
+
+---
+2. Dashboard + Metrics
+---
+פעולות: איחוד/הרחבת Dashboard – מדדים (גלובלי, סשן, תקופה), פילטרים (תאריך, סשן, violation, ריצה), ייצוא (CSV/JSON), duration ו-violations.
+תוצר: UI + API ייצוא + תיעוד.
+
+לו״ז משוער: 2–2.5 שבועות.
+
+Definition of Done:
+• Dashboard מציג מדדים (value-summary, duration, violations לפי reason) עם פילטרים מוגדרים.
+• ייצוא נתונים (CSV או JSON) זמין ומוגדר.
+• תיעוד שימוש ב-Dashboard ואופן הייצוא מאושר.
+
+---
+3. Justification + DoE + Risk Oracle
+---
+פעולות: Justification – תבניות + UI + קישור לריצות. DoE – עיצוב → הרצה → תוצאות בדשבורד. Risk Oracle – חיבור ל-Dashboard (התראות), בלי לשנות Hard Stop.
+תוצר: קומפוננטות משולבות + "איך משתמשים".
+
+לו״ז משוער: 2–3 שבועות.
+
+Definition of Done:
+• Justification: תבניות פעילות, הצגה ב-UI, קישור לריצות/ביקורת.
+• DoE: זרימת עיצוב → הרצה → תוצאות בדשבורד; ייצוא אם הוגדר בסקופ.
+• Risk Oracle: מוצג ב-Dashboard כהתראות/מדד, ללא שינוי ב-Hard Stop.
+• מסמך "איך משתמשים" לכל רכיב מאושר.
+
+---
+4. FIL-01
+---
+פעולות: כריית patterns מ-violations (reason, details, session, זמן). API ל-warnings בלבד (לא חסימת אנדפוינטים). תצוגה בדשבורד.
+תוצר: שירות FIL-01, endpoint warnings, אינטגרציה ב-Dashboard.
+
+לו״ז משוער: 2–2.5 שבועות.
+
+Definition of Done:
+• שירות FIL-01 מחזיר warnings על בסיס כריית patterns מ-violations.
+• Endpoint ל-warnings מתועד; אין חסימת אנדפוינטים.
+• תצוגת התראות FIL ב-Dashboard פועלת ומאושרת.
+
+---
+5. אינטגרציה, QA, מסירה
+---
+פעולות: מקרי מבחן מלאים (Kernel Lock, Recovery, דוחות, DoE, FIL). תיעוד: ארכיטקטורה, runbook, "מה בוצע". מסירה + sign-off.
+תוצר: דוח QA, חבילת תיעוד.
+
+לו״ז משוער: 1–1.5 שבועות.
+
+Definition of Done:
+• כל מקרי המבחן הרלוונטיים רצו ועברו.
+• תיעוד סופי (ארכיטקטורה, runbook, סיכום מיילסטונים) הוגש.
+• מסירה לסביבה מוסכמת ו-sign-off מהלקוח.
+
+========================================
+מה לא כלול (Out of scope)
+========================================
+• שינוי לוגיקת Hard Stop או ביטול Kernel Lock.
+• אנדפוינטים חדשים שלא הוגדרו במיילסטון 1 כחייבי gate.
+• פיתוח תשתית RAG/LLM חדשה או החלפת מודלים.
+• אינטגרציה עם מערכות חיצוניות (ERP, LIMS וכו') שלא סוכמו במפורש.
+• תחזוקה/תמיכה מתמשכת מעבר למסירה (מיילסטון 5).
+• FIL-01: חסימת אנדפוינטים או שינוי כללי violation – רק warnings.
+• הרחבת DoE ללוגיקת עיצוב שלא הוגדרה (רק מה שמופיע בסקופ).
+
+========================================
+תלויות וסיום
+========================================
+תלויות: מיילסטונים 2,3 נשענים על 1. מיילסטון 4 עצמאי אחרי 1. מיילסטון 5 אחרי 2,3,4.
+שאלות לחדד: אילו אנדפוינטים נוספים ב-gate; מה "Governance מלא"; עומק FIL-01.
+
+לא מתחילים עד לאישור מפורש על המסמך (כולל לוח זמנים ו-DoD).

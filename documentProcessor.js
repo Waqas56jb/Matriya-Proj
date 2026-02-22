@@ -3,10 +3,13 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { createRequire } from 'module';
 import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
-import * as XLSX from 'xlsx';
 import logger from './logger.js';
+
+const require = createRequire(import.meta.url);
+const XLSX = require('xlsx');
 
 class DocumentProcessor {
   constructor() {
