@@ -215,4 +215,24 @@ router.get("/me", ensureDbInitialized, requireAuth, async (req, res) => {
   });
 });
 
+/**
+ * List all users (id, username) for manager "add member" dropdown.
+ * Same users as Matriya auth; requires any authenticated user.
+ */
+router.get("/users", ensureDbInitialized, requireAuth, async (req, res) => {
+  try {
+    if (!User) return res.status(503).json({ error: "Database not available" });
+    const rows = await User.findAll({
+      attributes: ["id", "username"],
+      order: [["username", "ASC"]],
+      where: { is_active: true }
+    });
+    const users = (rows || []).map(u => ({ user_id: u.id, username: u.username }));
+    return res.json({ users });
+  } catch (e) {
+    logger.error(`List users error: ${e.message}`);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 export { router as authRouter, getCurrentUser, requireAuth };

@@ -22,10 +22,10 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS users_username_idx ON users(username);
 CREATE INDEX IF NOT EXISTS users_email_idx ON users(email);
 
--- Step 4: Create documents table (for vector storage)
+-- Step 4: Create rag_documents table (for RAG/vector storage)
+-- Named rag_documents to avoid conflict with maneger-back's "documents" table (project docs).
 -- Note: The embedding dimension (384) matches all-MiniLM-L6-v2 model
--- If you use a different model, change the dimension accordingly
-CREATE TABLE IF NOT EXISTS documents (
+CREATE TABLE IF NOT EXISTS rag_documents (
     id TEXT PRIMARY KEY,
     embedding vector(384),
     document TEXT NOT NULL,
@@ -34,19 +34,19 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 -- Step 5: Create vector index for similarity search (IMPORTANT for performance)
-CREATE INDEX IF NOT EXISTS documents_embedding_idx 
-ON documents 
+CREATE INDEX IF NOT EXISTS rag_documents_embedding_idx 
+ON rag_documents 
 USING ivfflat (embedding vector_cosine_ops)
 WITH (lists = 100);
 
 -- Step 6: Create index on metadata for faster filtering
-CREATE INDEX IF NOT EXISTS documents_metadata_idx 
-ON documents 
+CREATE INDEX IF NOT EXISTS rag_documents_metadata_idx 
+ON rag_documents 
 USING GIN (metadata);
 
 -- Step 7: Create index on metadata->filename for file filtering
-CREATE INDEX IF NOT EXISTS documents_metadata_filename_idx 
-ON documents 
+CREATE INDEX IF NOT EXISTS rag_documents_metadata_filename_idx 
+ON rag_documents 
 USING BTREE ((metadata->>'filename'));
 
 -- Step 8: Create file_permissions table (for user file access control)
@@ -144,11 +144,15 @@ CREATE TABLE IF NOT EXISTS research_loop_runs (
     stopped_by_violation BOOLEAN NOT NULL DEFAULT FALSE,
     violation_id INTEGER REFERENCES violations(id) ON DELETE SET NULL,
     duration_ms INTEGER,
+    pre_justification_text TEXT,
+    doe_design_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS research_loop_runs_session_id_idx ON research_loop_runs(session_id);
 CREATE INDEX IF NOT EXISTS research_loop_runs_created_at_idx ON research_loop_runs(created_at);
--- Migration: if table already exists without duration_ms, run: ALTER TABLE research_loop_runs ADD COLUMN IF NOT EXISTS duration_ms INTEGER;
+-- Migrations (run after tables exist): ALTER TABLE research_loop_runs ADD COLUMN IF NOT EXISTS duration_ms INTEGER;
+-- ALTER TABLE research_loop_runs ADD COLUMN IF NOT EXISTS pre_justification_text TEXT;
+-- ALTER TABLE research_loop_runs ADD COLUMN IF NOT EXISTS doe_design_id INTEGER; (optional: add FK to doe_designs(id) later)
 
 -- Step 14: Justification templates (labels/descriptions for research loop justifications)
 CREATE TABLE IF NOT EXISTS justification_templates (
@@ -184,11 +188,11 @@ CREATE INDEX IF NOT EXISTS doe_designs_created_at_idx ON doe_designs(created_at 
 
 -- Check if tables exist:
 -- SELECT table_name FROM information_schema.tables 
--- WHERE table_schema = 'public' AND table_name IN ('users', 'documents', 'file_permissions', 'search_history', 'research_sessions', 'research_audit_log', 'integrity_cycle_snapshots', 'violations', 'system_snapshots', 'research_loop_runs', 'justification_templates', 'doe_designs');
+-- WHERE table_schema = 'public' AND table_name IN ('users', 'rag_documents', 'file_permissions', 'search_history', 'research_sessions', 'research_audit_log', 'integrity_cycle_snapshots', 'violations', 'system_snapshots', 'research_loop_runs', 'justification_templates', 'doe_designs');
 
 -- Check if indexes exist:
 -- SELECT indexname FROM pg_indexes 
--- WHERE tablename IN ('users', 'documents');
+-- WHERE tablename IN ('users', 'rag_documents');
 
 -- ============================================================================
 -- Done! Your tables are ready.

@@ -10,6 +10,7 @@ import { getDefaultRules, getConditionTypes } from './integrityRulesEngine.js';
 import { invalidateCache as invalidateJustificationCache } from './justificationTemplates.js';
 import { runLoop } from './researchLoop.js';
 import { evaluateRisks } from './riskOracle.js';
+import { getFilWarnings } from './filLayer.js';
 import logger from './logger.js';
 
 const router = express.Router();
@@ -425,7 +426,7 @@ router.get("/recovery/rules", verifyAdmin, async (req, res) => {
 });
 
 /**
- * Risk Oracle – predicted/assessed risks from current integrity state. Admin only.
+ * Risk Oracle – predicted/assessed risks from current integrity state. Warnings only; does not block endpoints. Admin only.
  * Query: session_id (optional) – if provided, evaluate for that session only; otherwise global.
  */
 router.get("/recovery/oracle", verifyAdmin, async (req, res) => {
@@ -436,6 +437,36 @@ router.get("/recovery/oracle", verifyAdmin, async (req, res) => {
   } catch (e) {
     logger.error(`Error getting recovery oracle: ${e.message}`);
     return res.status(500).json({ error: `Error getting recovery oracle: ${e.message}` });
+  }
+});
+
+/** Alias for dashboard: GET /admin/risk-oracle (same as /admin/recovery/oracle) */
+router.get("/risk-oracle", verifyAdmin, async (req, res) => {
+  try {
+    const sessionId = req.query.session_id?.trim?.() || null;
+    const result = await evaluateRisks(sessionId);
+    return res.json(result);
+  } catch (e) {
+    logger.error(`Error getting risk oracle: ${e.message}`);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * FIL-01 (Failure Intelligence Layer) – pattern mining from violations. Warnings only; no Hard Stop change. Admin only.
+ * GET /admin/fil/warnings?days=30&session_id=&limit=100
+ */
+router.get("/fil/warnings", verifyAdmin, async (req, res) => {
+  try {
+    const result = await getFilWarnings({
+      session_id: req.query.session_id?.trim?.() || null,
+      days: req.query.days,
+      limit: req.query.limit
+    });
+    return res.json(result);
+  } catch (e) {
+    logger.error(`Error getting FIL warnings: ${e.message}`);
+    return res.status(500).json({ error: e.message });
   }
 });
 
@@ -844,11 +875,20 @@ router.get("/doe/export", verifyAdmin, async (req, res) => {
     if (!ResearchLoopRun) return res.status(503).json({ error: "Research loop runs not available" });
     const limit = Math.min(parseInt(req.query.limit) || 100, 500);
     const format = (req.query.format || 'json').toLowerCase();
-    const runs = await ResearchLoopRun.findAll({ order: [['created_at', 'DESC']], limit, attributes: ['id', 'session_id', 'query', 'outputs', 'created_at'] });
-    const rows = runs.map(r => ({ run_id: r.id, session_id: r.session_id, query: r.query, synthesis_output: (r.outputs && r.outputs.synthesis) ? r.outputs.synthesis : '', created_at: r.created_at ? r.created_at.toISOString() : null }));
+    const runs = await ResearchLoopRun.findAll({ order: [['created_at', 'DESC']], limit, attributes: ['id', 'session_id', 'query', 'outputs', 'justifications', 'pre_justification_text', 'doe_design_id', 'duration_ms', 'created_at'] });
+    const rows = runs.map(r => ({
+      run_id: r.id,
+      session_id: r.session_id,
+      query: r.query,
+      synthesis_output: (r.outputs && r.outputs.synthesis) ? r.outputs.synthesis : '',
+      pre_justification_text: r.pre_justification_text || null,
+      doe_design_id: r.doe_design_id || null,
+      duration_ms: r.duration_ms || null,
+      created_at: r.created_at ? r.created_at.toISOString() : null
+    }));
     if (format === 'csv') {
       const BOM = '\uFEFF';
-      const headers = ['run_id', 'session_id', 'query', 'synthesis_output', 'created_at'];
+      const headers = ['run_id', 'session_id', 'query', 'synthesis_output', 'pre_justification_text', 'doe_design_id', 'duration_ms', 'created_at'];
       const csv = [headers.join(','), ...rows.map(row => headers.map(h => `"${String(row[h] ?? '').replace(/"/g, '""')}"`).join(','))].join('\r\n');
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename=doe-export-${new Date().toISOString().slice(0, 10)}.csv`);
@@ -960,7 +1000,7 @@ router.post("/doe/designs/:id/execute", verifyAdmin, async (req, res) => {
     for (const row of design) {
       const factors = row.factors || row;
       const query = queryTemplate ? interpolateDoE(queryTemplate, factors) : JSON.stringify(factors);
-      const result = await runLoop(sessionId, query, ragService, null);
+      const result = await runLoop(sessionId, query, ragService, null, { doe_design_id: id });
       results.push({ run: row.run != null ? row.run : results.length + 1, factors, query, run_id: result.run_id, error: result.error || null });
     }
     return res.json({ success: true, design_id: id, session_id: sessionId, runs_executed: results.length, results });
@@ -1096,11 +1136,13 @@ router.patch("/recovery/violations/:id", verifyAdmin, async (req, res) => {
     }
     const resolveNote = req.body?.resolve_note || null;
     const userId = req.user?.id ?? null;
+    const resolvedAt = new Date();
     await violation.update({
-      resolved_at: new Date(),
+      resolved_at: resolvedAt,
       resolved_by: userId,
       resolve_note: resolveNote
     });
+    logger.info(`Recovery audit: violation ${violation.id} resolved by user_id=${userId}, session_id=${violation.session_id}, note=${resolveNote || '(none)'}`);
     return res.json({
       success: true,
       message: "Violation resolved; gate unlocked for session",
@@ -1117,19 +1159,44 @@ router.patch("/recovery/violations/:id", verifyAdmin, async (req, res) => {
 /**
  * Value report summary for governance: runs, successes, hard stops, violations by type, recoveries.
  * GET /admin/reports/value-summary (admin only)
+ * Query: session_id, date_from, date_to (ISO), format=json|csv
  */
 router.get("/reports/value-summary", verifyAdmin, async (req, res) => {
   try {
+    const sessionId = req.query.session_id?.trim?.() || null;
+    const dateFrom = req.query.date_from ? new Date(req.query.date_from) : null;
+    const dateTo = req.query.date_to ? new Date(req.query.date_to) : null;
+    const format = (req.query.format || 'json').toLowerCase();
+
+    const runWhere = {};
+    if (sessionId) runWhere.session_id = sessionId;
+    if ((dateFrom && !isNaN(dateFrom.getTime())) || (dateTo && !isNaN(dateTo.getTime()))) {
+      runWhere.created_at = {};
+      if (dateFrom && !isNaN(dateFrom.getTime())) runWhere.created_at[Op.gte] = dateFrom;
+      if (dateTo && !isNaN(dateTo.getTime())) runWhere.created_at[Op.lte] = dateTo;
+    }
+
     const totalRuns = ResearchLoopRun
-      ? await ResearchLoopRun.count().catch(() => 0)
+      ? await ResearchLoopRun.count({ where: runWhere }).catch(() => 0)
       : 0;
     const stoppedByViolation = ResearchLoopRun
-      ? await ResearchLoopRun.count({ where: { stopped_by_violation: true } }).catch(() => 0)
+      ? await ResearchLoopRun.count({ where: { ...runWhere, stopped_by_violation: true } }).catch(() => 0)
       : 0;
     const successfulRuns = totalRuns - stoppedByViolation;
 
+    const violationWhere = {};
+    if (sessionId) violationWhere.session_id = sessionId;
+    if ((dateFrom && !isNaN(dateFrom.getTime())) || (dateTo && !isNaN(dateTo.getTime()))) {
+      violationWhere.created_at = {};
+      if (dateFrom && !isNaN(dateFrom.getTime())) violationWhere.created_at[Op.gte] = dateFrom;
+      if (dateTo && !isNaN(dateTo.getTime())) violationWhere.created_at[Op.lte] = dateTo;
+    }
     const violations = Violation
-      ? await Violation.findAll({ attributes: ['reason', 'resolved_at'], raw: true }).catch(() => [])
+      ? await Violation.findAll({
+          where: Object.keys(violationWhere).length ? violationWhere : {},
+          attributes: ['id', 'session_id', 'reason', 'details', 'resolved_at', 'resolved_by', 'resolve_note', 'created_at'],
+          raw: true
+        }).catch(() => [])
       : [];
     const byReason = {};
     let resolvedCount = 0;
@@ -1143,7 +1210,7 @@ router.get("/reports/value-summary", verifyAdmin, async (req, res) => {
     if (ResearchLoopRun) {
       const withDuration = await ResearchLoopRun.findAll({
         attributes: ['duration_ms'],
-        where: { duration_ms: { [Op.ne]: null } },
+        where: { ...runWhere, duration_ms: { [Op.ne]: null } },
         raw: true
       }).catch(() => []);
       const values = withDuration.map(r => r.duration_ms).filter(n => typeof n === 'number');
@@ -1157,12 +1224,39 @@ router.get("/reports/value-summary", verifyAdmin, async (req, res) => {
       }
     }
 
-    return res.json({
+    const payload = {
       runs: { total: totalRuns, successful: successfulRuns, stopped_by_violation: stoppedByViolation },
       violations_by_reason: byReason,
       recoveries: { total_resolved: resolvedCount },
-      duration_ms: durationStats
-    });
+      duration_ms: durationStats,
+      violations: violations.map(v => ({
+        id: v.id,
+        session_id: v.session_id,
+        reason: v.reason,
+        details: v.details,
+        created_at: v.created_at,
+        resolved_at: v.resolved_at,
+        resolved_by: v.resolved_by,
+        resolve_note: v.resolve_note
+      }))
+    };
+
+    if (format === 'csv') {
+      const rows = [
+        ['metric', 'value'],
+        ['total_runs', payload.runs.total],
+        ['successful_runs', payload.runs.successful],
+        ['stopped_by_violation', payload.runs.stopped_by_violation],
+        ['recoveries_total_resolved', payload.recoveries.total_resolved],
+        ...(payload.duration_ms ? [['duration_avg_ms', payload.duration_ms.avg_ms], ['duration_min_ms', payload.duration_ms.min_ms], ['duration_max_ms', payload.duration_ms.max_ms]] : [])
+      ];
+      const csv = rows.map(r => r.join(',')).join('\n');
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename=value-summary.csv');
+      return res.send('\uFEFF' + csv);
+    }
+
+    return res.json(payload);
   } catch (e) {
     logger.error(`Error building value summary: ${e.message}`);
     return res.status(500).json({ error: e.message });

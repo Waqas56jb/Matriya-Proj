@@ -388,7 +388,13 @@ app.get("/search", async (req, res) => {
         return res.status(400).json({
           error: gate.error,
           research_stage_error: true,
-          ...(gate.research_gate_locked && { research_gate_locked: true, violation_id: gate.violation_id })
+          ...(gate.research_gate_locked && {
+            research_gate_locked: true,
+            violation_id: gate.violation_id,
+            status: gate.status || 'stopped',
+            stopPipeline: gate.stopPipeline !== false,
+            allowed_next_step: gate.allowed_next_step || 'recovery_required'
+          })
         });
       }
       const responseSessionId = gate.session.id;
@@ -531,7 +537,7 @@ app.get("/search", async (req, res) => {
  */
 app.post("/api/research/run", async (req, res) => {
   try {
-    const { session_id: sessionId, query, use_4_agents: use4Agents = true, filename } = req.body || {};
+    const { session_id: sessionId, query, use_4_agents: use4Agents = true, filename, pre_justification: preJustification, doe_design_id: doeDesignId } = req.body || {};
     if (!query || typeof query !== 'string') {
       return res.status(400).json({ error: 'query is required' });
     }
@@ -548,14 +554,20 @@ app.post("/api/research/run", async (req, res) => {
       return res.status(409).json({
         error: `Session locked due to B-Integrity violation (${violation.reason || violation.type}). Use Recovery API to resolve.`,
         research_gate_locked: true,
-        violation_id: violation.id
+        violation_id: violation.id,
+        status: 'stopped',
+        stopPipeline: true,
+        allowed_next_step: 'recovery_required'
       });
     }
 
     const filterMetadata = (filename && typeof filename === 'string') ? { filename } : null;
+    const runOptions = {};
+    if (preJustification != null && typeof preJustification === 'string') runOptions.pre_justification_text = preJustification.trim() || null;
+    if (doeDesignId != null) runOptions.doe_design_id = parseInt(doeDesignId, 10) || null;
 
     if (use4Agents) {
-      const result = await runLoop(sessionId, query.trim(), getRagService(), filterMetadata);
+      const result = await runLoop(sessionId, query.trim(), getRagService(), filterMetadata, runOptions);
       if (result.error) {
         return res.status(500).json({ error: result.error, outputs: result.outputs || {}, justifications: result.justifications || [] });
       }
@@ -587,6 +599,9 @@ app.post("/api/research/run", async (req, res) => {
  * Create a new research session (Stage 1). Optional – session is also created on first /search with stage.
  */
 app.post("/research/session", async (req, res) => {
+  if (!ResearchSession) {
+    return res.status(503).json({ error: "Research session storage not available. Ensure database is initialized and research_sessions table exists." });
+  }
   const user = await getCurrentUser(req);
   const userId = user?.id ?? null;
   try {
@@ -594,7 +609,10 @@ app.post("/research/session", async (req, res) => {
     return res.json({ session_id: session.id, completed_stages: session.completed_stages || [] });
   } catch (e) {
     logger.error(`Create research session error: ${e.message}`);
-    return res.status(500).json({ error: e.message });
+    const isDbError = /relation|does not exist|research_sessions/i.test(String(e.message));
+    return res.status(isDbError ? 503 : 500).json({
+      error: isDbError ? "Research session table missing or DB error. Run migrations to create research_sessions." : e.message
+    });
   }
 });
 

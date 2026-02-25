@@ -425,6 +425,14 @@ const ResearchLoopRun = sequelize ? sequelize.define('ResearchLoopRun', {
     type: DataTypes.INTEGER,
     allowNull: true
   },
+  pre_justification_text: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  doe_design_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
   created_at: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW

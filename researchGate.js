@@ -87,7 +87,10 @@ export async function validateAndAdvance(sessionId, stage, userId = null) {
       ok: false,
       error: `Session locked due to B-Integrity violation (${violation.reason || violation.type}). Use Recovery API to resolve.`,
       violation_id: violation.id,
-      research_gate_locked: true
+      research_gate_locked: true,
+      status: 'stopped',
+      stopPipeline: true,
+      allowed_next_step: 'recovery_required'
     };
   }
   const data = await getSession(sessionId);

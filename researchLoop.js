@@ -61,9 +61,10 @@ async function runAgent(agentName, query, previousOutput, ragService, ragContext
  * @param {string} query - User query
  * @param {object} ragService - RAG service (has llmService, generateAnswer)
  * @param {object|null} filterMetadata - Optional { filename } to restrict RAG to one file
+ * @param {object|null} runOptions - Optional { pre_justification_text, doe_design_id }
  * @returns {Promise<{ run_id, outputs, justifications, error? }>}
  */
-export async function runLoop(sessionId, query, ragService, filterMetadata = null) {
+export async function runLoop(sessionId, query, ragService, filterMetadata = null, runOptions = null) {
   const startMs = Date.now();
   const outputs = {};
   const justifications = [];
@@ -114,7 +115,8 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
   }
 
   const durationMs = Date.now() - startMs;
-  const runRecord = await saveRun(sessionId, query, outputs, justifications, false, null, durationMs);
+  const opts = runOptions && typeof runOptions === 'object' ? runOptions : {};
+  const runRecord = await saveRun(sessionId, query, outputs, justifications, false, null, durationMs, opts.pre_justification_text ?? null, opts.doe_design_id ?? null);
   return {
     run_id: runRecord?.id ?? null,
     outputs,
@@ -123,7 +125,7 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
   };
 }
 
-async function saveRun(sessionId, query, outputs, justifications, stoppedByViolation = false, violationId = null, durationMs = null) {
+async function saveRun(sessionId, query, outputs, justifications, stoppedByViolation = false, violationId = null, durationMs = null, preJustificationText = null, doeDesignId = null) {
   if (!ResearchLoopRun) return null;
   try {
     const run = await ResearchLoopRun.create({
@@ -133,7 +135,9 @@ async function saveRun(sessionId, query, outputs, justifications, stoppedByViola
       justifications: justifications || [],
       stopped_by_violation: stoppedByViolation,
       violation_id: violationId,
-      duration_ms: durationMs
+      duration_ms: durationMs,
+      pre_justification_text: preJustificationText || null,
+      doe_design_id: doeDesignId || null
     });
     return run;
   } catch (e) {
