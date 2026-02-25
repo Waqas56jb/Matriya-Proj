@@ -11,7 +11,7 @@ const AGENT_ORDER = ['analysis', 'research', 'critic', 'synthesis'];
 
 function getAgentPrompt(agentName, query, previousOutput, ragContext = null) {
   const prev = previousOutput ? `\n\nPrevious step output:\n${String(previousOutput).slice(0, 2000)}` : '';
-  const docContext = ragContext ? `\n\nDocument context (use if relevant):\n${String(ragContext).slice(0, 3000)}` : '';
+  const docContext = ragContext ? `\n\nDocument context (use if relevant):\n${String(ragContext).slice(0, 5000)}` : '';
   const base = `Query: ${query}${prev}${docContext}`;
   const prompts = {
     analysis: {
@@ -72,10 +72,15 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
   let previousOutput = null;
   let ragContext = null;
 
+  // When searching all files (no filter), retrieve more chunks and allow more context for better answers
+  const isAllFiles = !filterMetadata || !filterMetadata.filename;
+  const nResults = isAllFiles ? 20 : 5;
+  const maxContextChars = isAllFiles ? 6000 : 3000;
+
   try {
     if (ragService.generateAnswer) {
-      const res = await ragService.generateAnswer(query, 5, filterMetadata || null, false);
-      ragContext = (res.context || res.results?.map(r => r.document || r.content).join('\n') || '').slice(0, 3000);
+      const res = await ragService.generateAnswer(query, nResults, filterMetadata || null, false);
+      ragContext = (res.context || res.results?.map(r => r.document || r.content).join('\n') || '').slice(0, maxContextChars);
     }
   } catch (e) {
     logger.warn(`RAG context for research step: ${e.message}`);
