@@ -27,7 +27,7 @@ async function ensureDbInitialized(req, res, next) {
       logger.info("Database initialized on first request");
     } catch (e) {
       logger.error(`Database initialization failed: ${e.message}`);
-      return res.status(500).json({ error: "Database initialization failed" });
+      return res.status(503).json({ error: "Database unavailable", detail: e.message });
     }
   }
   next();
