@@ -81,7 +81,17 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
   try {
     if (ragService.generateAnswer) {
       const res = await ragService.generateAnswer(query, nResults, filterMetadata || null, false);
-      ragContext = (res.context || res.results?.map(r => r.document || r.content).join('\n') || '').slice(0, maxContextChars);
+      let text = (res.context || res.results?.map(r => r.document || r.content).join('\n') || '').slice(0, maxContextChars);
+      if (filterMetadata) {
+        const files = Array.isArray(filterMetadata.filenames) && filterMetadata.filenames.length > 0
+          ? filterMetadata.filenames
+          : (typeof filterMetadata.filename === 'string' && filterMetadata.filename.trim() ? [filterMetadata.filename] : null);
+        if (files && files.length > 0) {
+          const sourceLine = `Sources (files) this answer is based on: ${files.join(', ')}.\n\n`;
+          text = sourceLine + text;
+        }
+      }
+      ragContext = text;
     }
   } catch (e) {
     logger.warn(`RAG context for research step: ${e.message}`);
