@@ -537,7 +537,7 @@ app.get("/search", async (req, res) => {
  */
 app.post("/api/research/run", async (req, res) => {
   try {
-    const { session_id: sessionId, query, use_4_agents: use4Agents = true, filename, pre_justification: preJustification, doe_design_id: doeDesignId } = req.body || {};
+    const { session_id: sessionId, query, use_4_agents: use4Agents = true, filename, filenames: filenamesBody, pre_justification: preJustification, doe_design_id: doeDesignId } = req.body || {};
     if (!query || typeof query !== 'string') {
       return res.status(400).json({ error: 'query is required' });
     }
@@ -561,7 +561,8 @@ app.post("/api/research/run", async (req, res) => {
       });
     }
 
-    const filterMetadata = (filename && typeof filename === 'string') ? { filename } : null;
+    const filenamesArray = Array.isArray(filenamesBody) && filenamesBody.length > 0 ? filenamesBody.filter(f => typeof f === 'string' && f.trim()) : null;
+    const filterMetadata = filenamesArray?.length ? { filenames: filenamesArray } : (filename && typeof filename === 'string' && filename.trim() ? { filename: filename.trim() } : null);
     const runOptions = {};
     if (preJustification != null && typeof preJustification === 'string') runOptions.pre_justification_text = preJustification.trim() || null;
     if (doeDesignId != null) runOptions.doe_design_id = parseInt(doeDesignId, 10) || null;

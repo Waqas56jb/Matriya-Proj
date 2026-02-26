@@ -72,8 +72,9 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
   let previousOutput = null;
   let ragContext = null;
 
-  // When searching all files (no filter), retrieve more chunks and allow more context for better answers
-  const isAllFiles = !filterMetadata || !filterMetadata.filename;
+  // When searching a single file, use fewer chunks; when no filter or multiple filenames (project scope), use more
+  const singleFileFilter = filterMetadata && typeof filterMetadata.filename === 'string' && filterMetadata.filename.trim();
+  const isAllFiles = !singleFileFilter;
   const nResults = isAllFiles ? 20 : 5;
   const maxContextChars = isAllFiles ? 6000 : 3000;
 

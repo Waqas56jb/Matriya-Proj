@@ -447,11 +447,21 @@ class SupabaseVectorStore {
       if (filterMetadata) {
         const conditions = [];
         for (const [key, value] of Object.entries(filterMetadata)) {
-          conditions.push(`metadata->>'${key}' = $${paramIndex}`);
-          params.push(value);
-          paramIndex++;
+          if (key === 'filenames' && Array.isArray(value) && value.length > 0) {
+            conditions.push(`metadata->>'filename' = ANY($${paramIndex}::text[])`);
+            params.push(value);
+            paramIndex++;
+          } else if (key === 'filename' && typeof value === 'string' && value) {
+            conditions.push(`metadata->>'filename' = $${paramIndex}`);
+            params.push(value);
+            paramIndex++;
+          } else if (key !== 'filenames' && value != null) {
+            conditions.push(`metadata->>'${key}' = $${paramIndex}`);
+            params.push(value);
+            paramIndex++;
+          }
         }
-        whereClause = "WHERE " + conditions.join(" AND ");
+        if (conditions.length) whereClause = "WHERE " + conditions.join(" AND ");
       }
 
       // Similarity search using cosine distance
