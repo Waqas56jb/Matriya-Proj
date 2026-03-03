@@ -9,7 +9,7 @@ import { dirname, join } from 'path';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import settings from './config.js';
 import RAGService from './ragService.js';
-import { initDb, SearchHistory, ResearchSession, ResearchAuditLog, PolicyAuditLog } from './database.js';
+import { initDb, SearchHistory, ResearchSession, ResearchAuditLog, PolicyAuditLog, DecisionAuditLog, IntegrityCycleSnapshot } from './database.js';
 import { authRouter, getCurrentUser } from './authEndpoints.js';
 import { adminRouter } from './adminEndpoints.js';
 import { StateMachine, Kernel } from './stateMachine.js';
@@ -23,6 +23,7 @@ import {
 import { runAfterCycle, getActiveViolation } from './integrityMonitor.js';
 import { runLoop } from './researchLoop.js';
 import logger from './logger.js';
+import { metricsMiddleware, getMetrics } from './metrics.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -54,6 +55,9 @@ app.use((req, res, next) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   next();
 });
+
+// Scope 3: observability – metrics and latency per route (no dashboard UI)
+app.use(metricsMiddleware);
 
 // Initialize database (non-blocking on Vercel)
 // On Vercel, skip initialization at startup to avoid blocking
@@ -130,6 +134,24 @@ async function logPolicyEnforcement(sessionId, stage) {
   }
 }
 
+/** Scope 2: log every gate decision for audit trail and replay determinism */
+async function logDecisionAudit(sessionId, stage, decision, responseType, requestQuery, inputsSnapshot, details = null) {
+  if (!DecisionAuditLog) return;
+  try {
+    await DecisionAuditLog.create({
+      session_id: sessionId,
+      stage,
+      decision,
+      response_type: responseType || null,
+      request_query: requestQuery != null ? String(requestQuery).slice(0, 4000) : null,
+      inputs_snapshot: inputsSnapshot || null,
+      details: details || null
+    });
+  } catch (e) {
+    logger.warn(`Decision audit log failed: ${e.message}`);
+  }
+}
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -165,6 +187,9 @@ const upload = multer({
   }
 });
 
+// Scope 1: parallel processes – one research run per session at a time
+const researchRunLocks = new Map();
+
 /**
  * Root endpoint
  */
@@ -177,14 +202,21 @@ app.get("/", (req, res) => {
 });
 
 /**
- * Health check endpoint
+ * Health check endpoint (Scope 3: includes metrics and latency)
  */
 app.get("/health", async (req, res) => {
   try {
     const info = await getRagService().getCollectionInfo();
+    const metrics = getMetrics();
     return res.json({
       status: "healthy",
-      vector_db: info
+      vector_db: info,
+      metrics: {
+        total_requests: metrics.total_requests,
+        total_errors: metrics.total_errors,
+        latency_p50_ms: metrics.latency_p50,
+        latency_p99_ms: metrics.latency_p99
+      }
     });
   } catch (e) {
     logger.error(`Health check failed: ${e.message}`);
@@ -385,6 +417,7 @@ app.get("/search", async (req, res) => {
         return res.status(500).json({ error: `Research gate error: ${e.message}` });
       }
       if (!gate.ok) {
+        await logDecisionAudit(sessionId, stage, 'deny', null, query, { session_id: sessionId, stage, research_gate_locked: !!gate.research_gate_locked, error: gate.error });
         return res.status(400).json({
           error: gate.error,
           research_stage_error: true,
@@ -399,6 +432,7 @@ app.get("/search", async (req, res) => {
       }
       const responseSessionId = gate.session.id;
       const responseType = gate.responseType;
+      await logDecisionAudit(responseSessionId, stage, 'allow', responseType, query, { session_id: responseSessionId, stage });
       const enforcement = await getEnforcement(responseSessionId, stage, gate.session);
       if (enforcement) await logPolicyEnforcement(responseSessionId, stage);
 
@@ -568,7 +602,12 @@ app.post("/api/research/run", async (req, res) => {
     if (doeDesignId != null) runOptions.doe_design_id = parseInt(doeDesignId, 10) || null;
 
     if (use4Agents) {
-      const result = await runLoop(sessionId, query.trim(), getRagService(), filterMetadata, runOptions);
+      const prev = researchRunLocks.get(sessionId) || Promise.resolve();
+      const runPromise = prev
+        .then(() => runLoop(sessionId, query.trim(), getRagService(), filterMetadata, runOptions))
+        .finally(() => { if (researchRunLocks.get(sessionId) === runPromise) researchRunLocks.delete(sessionId); });
+      researchRunLocks.set(sessionId, runPromise);
+      const result = await runPromise;
       if (result.error) {
         return res.status(500).json({ error: result.error, outputs: result.outputs || {}, justifications: result.justifications || [] });
       }
@@ -664,6 +703,74 @@ app.patch("/research/session/:id", async (req, res) => {
     return res.json({ session_id: session.id, enforcement_overridden: session.enforcement_overridden });
   } catch (e) {
     logger.error(`Patch research session error: ${e.message}`);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/** Scope 1: Staging proof – current stage, next allowed, gate status (for verification/automation). */
+app.get("/research/staging-proof", async (req, res) => {
+  const sessionId = req.query.session_id || req.query.sessionId;
+  if (!sessionId) return res.status(400).json({ error: "session_id query is required" });
+  try {
+    const session = await ResearchSession.findByPk(sessionId);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    const completed = session.completed_stages || [];
+    const { getNextAllowedStage } = await import('./researchGate.js');
+    const nextAllowed = getNextAllowedStage(completed);
+    const violation = await getActiveViolation(sessionId);
+    let lastSnapshotCycleIndex = null;
+    if (IntegrityCycleSnapshot) {
+      const last = await IntegrityCycleSnapshot.findOne({
+        where: { session_id: sessionId },
+        order: [['created_at', 'DESC']]
+      });
+      if (last) lastSnapshotCycleIndex = last.cycle_index;
+    }
+    return res.json({
+      session_id: sessionId,
+      current_stage: completed.length ? completed[completed.length - 1] : null,
+      completed_stages: completed,
+      next_allowed: nextAllowed,
+      gate_locked: !!violation,
+      violation_id: violation?.id ?? null,
+      last_snapshot_cycle_index: lastSnapshotCycleIndex
+    });
+  } catch (e) {
+    logger.error(`Staging proof error: ${e.message}`);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/** Scope 2: Read-only – list decision audit log (no UI). */
+app.get("/api/audit/decisions", async (req, res) => {
+  if (!DecisionAuditLog) return res.status(503).json({ error: "Decision audit log not available" });
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+  const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+  try {
+    const { count, rows } = await DecisionAuditLog.findAndCountAll({
+      order: [['created_at', 'DESC']],
+      limit,
+      offset
+    });
+    return res.json({ decisions: rows, total: count, limit, offset });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/** Scope 2: Read-only – decision audit for one session (replay/snapshot). */
+app.get("/api/audit/session/:sessionId/decisions", async (req, res) => {
+  if (!DecisionAuditLog) return res.status(503).json({ error: "Decision audit log not available" });
+  const sessionId = req.params.sessionId;
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 100));
+  try {
+    const rows = await DecisionAuditLog.findAll({
+      where: { session_id: sessionId },
+      order: [['created_at', 'ASC']],
+      limit
+    });
+    return res.json({ session_id: sessionId, decisions: rows });
+  } catch (e) {
     return res.status(500).json({ error: e.message });
   }
 });

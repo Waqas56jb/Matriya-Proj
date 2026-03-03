@@ -95,8 +95,21 @@ class RAGService {
     // Extract texts and metadatas for vector store
     const texts = chunks.map(chunk => chunk.text);
     const metadatas = chunks.map(chunk => chunk.metadata);
-    
-    // Add to vector store
+    const filenameForStore = metadata.filename;
+
+    // Delta hardening: replace existing chunks for this file (idempotent re-ingest)
+    try {
+      if (filenameForStore) {
+        const delResult = await this.vectorStore.deleteDocuments(null, { filename: filenameForStore });
+        if (delResult.deleted_count > 0) {
+          logger.info(`Delta: removed ${delResult.deleted_count} existing chunks for file ${filenameForStore}`);
+        }
+      }
+    } catch (e) {
+      logger.warn(`Delta delete (non-fatal): ${e.message}`);
+    }
+
+    // Add to vector store (ON CONFLICT DO UPDATE in DB = idempotent by chunk id)
     try {
       const ids = await this.vectorStore.addDocuments(texts, metadatas);
       logger.info(`Successfully ingested file: ${filePath}`);

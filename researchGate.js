@@ -2,6 +2,7 @@
  * Stage 1 – Research FSM Gate (FSCTM)
  * Enforces: K→C→B→N→L only. No skip. Gate rules per stage.
  * When an active B-Integrity Violation exists for the session, the gate is locked.
+ * Gate is deterministic: decision depends only on DB state (session, completed_stages, violations).
  */
 import { ResearchSession, ResearchAuditLog, STAGES_ORDER } from './database.js';
 import { getActiveViolation } from './integrityMonitor.js';

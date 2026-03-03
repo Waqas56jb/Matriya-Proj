@@ -263,6 +263,50 @@ const PolicyAuditLog = sequelize ? sequelize.define('PolicyAuditLog', {
   timestamps: false
 }) : null;
 
+// Decision audit log (Scope 2 – full trail: allow/block/stop + inputs_snapshot for replay)
+const DecisionAuditLog = sequelize ? sequelize.define('DecisionAuditLog', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  session_id: {
+    type: DataTypes.UUID,
+    allowNull: false
+  },
+  stage: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  decision: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  response_type: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  request_query: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  inputs_snapshot: {
+    type: DataTypes.JSONB,
+    allowNull: true
+  },
+  details: {
+    type: DataTypes.JSONB,
+    allowNull: true
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'decision_audit_log',
+  timestamps: false
+}) : null;
+
 // B-Integrity: snapshot of |M| (e.g. document count) per research cycle
 const IntegrityCycleSnapshot = sequelize ? sequelize.define('IntegrityCycleSnapshot', {
   id: {
@@ -557,6 +601,7 @@ export {
   ResearchSession,
   ResearchAuditLog,
   PolicyAuditLog,
+  DecisionAuditLog,
   IntegrityCycleSnapshot,
   Violation,
   SystemSnapshot,

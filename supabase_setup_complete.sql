@@ -80,8 +80,10 @@ CREATE TABLE IF NOT EXISTS research_sessions (
     user_id INTEGER,
     completed_stages TEXT[] DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    enforcement_overridden BOOLEAN NOT NULL DEFAULT FALSE
 );
+-- If table already exists: ALTER TABLE research_sessions ADD COLUMN IF NOT EXISTS enforcement_overridden BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE TABLE IF NOT EXISTS research_audit_log (
     id SERIAL PRIMARY KEY,
     session_id UUID NOT NULL REFERENCES research_sessions(id) ON DELETE CASCADE,
@@ -92,6 +94,30 @@ CREATE TABLE IF NOT EXISTS research_audit_log (
 );
 CREATE INDEX IF NOT EXISTS research_audit_log_session_id_idx ON research_audit_log(session_id);
 CREATE INDEX IF NOT EXISTS research_audit_log_created_at_idx ON research_audit_log(created_at);
+
+-- Step 11b: Policy audit log (enforcement events)
+CREATE TABLE IF NOT EXISTS policy_audit_log (
+    id SERIAL PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES research_sessions(id) ON DELETE CASCADE,
+    stage VARCHAR(10),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS policy_audit_log_session_id_idx ON policy_audit_log(session_id);
+
+-- Step 11c: Decision audit log (Scope 2 – full trail for replay/determinism)
+CREATE TABLE IF NOT EXISTS decision_audit_log (
+    id SERIAL PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES research_sessions(id) ON DELETE CASCADE,
+    stage VARCHAR(10) NOT NULL,
+    decision VARCHAR(20) NOT NULL,
+    response_type VARCHAR(50),
+    request_query TEXT,
+    inputs_snapshot JSONB,
+    details JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS decision_audit_log_session_id_idx ON decision_audit_log(session_id);
+CREATE INDEX IF NOT EXISTS decision_audit_log_created_at_idx ON decision_audit_log(created_at);
 
 -- Step 12: B-Integrity Monitor – cycle snapshots and violations
 CREATE TABLE IF NOT EXISTS integrity_cycle_snapshots (
