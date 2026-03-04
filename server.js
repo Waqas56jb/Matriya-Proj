@@ -793,12 +793,19 @@ app.get("/api/audit/session/:sessionId/decisions", async (req, res) => {
 });
 
 // ---------- Kernel Amendment v1.2 – Observability dashboard, SEM, gates, noise ----------
-/** Metrics dashboard: False B rate, Missed B rate, confidence distribution, complexity context */
+/** Metrics dashboard: False B rate, Missed B rate, confidence, complexity + total_requests, latency_p50, latency_p99, error_count */
 app.get("/api/observability/dashboard", async (req, res) => {
   try {
     const dashboard = await getMetricsDashboard();
     if (!dashboard) return res.status(503).json({ error: "Decision audit log not available" });
-    return res.json(dashboard);
+    const metrics = getMetrics();
+    return res.json({
+      ...dashboard,
+      total_requests: metrics.total_requests,
+      latency_p50: metrics.latency_p50,
+      latency_p99: metrics.latency_p99,
+      error_count: metrics.total_errors
+    });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
