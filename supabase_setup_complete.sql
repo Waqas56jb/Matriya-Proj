@@ -119,6 +119,28 @@ CREATE TABLE IF NOT EXISTS decision_audit_log (
 CREATE INDEX IF NOT EXISTS decision_audit_log_session_id_idx ON decision_audit_log(session_id);
 CREATE INDEX IF NOT EXISTS decision_audit_log_created_at_idx ON decision_audit_log(created_at);
 
+-- Step 11d: Kernel Amendment v1.2 – Gate observability (confidence_score, basis_count, model_version_hash, complexity_context)
+ALTER TABLE decision_audit_log ADD COLUMN IF NOT EXISTS confidence_score NUMERIC(5,4);
+ALTER TABLE decision_audit_log ADD COLUMN IF NOT EXISTS basis_count INTEGER;
+ALTER TABLE decision_audit_log ADD COLUMN IF NOT EXISTS model_version_hash VARCHAR(64);
+ALTER TABLE decision_audit_log ADD COLUMN IF NOT EXISTS complexity_context JSONB;
+ALTER TABLE decision_audit_log ADD COLUMN IF NOT EXISTS human_feedback VARCHAR(20);
+-- human_feedback: 'false_b' | 'missed_b' | null (for False B rate / Missed B rate)
+
+-- Step 11e: Noise tracking – events classified as noise for re-evaluation after Kernel update
+CREATE TABLE IF NOT EXISTS noise_events (
+    id SERIAL PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES research_sessions(id) ON DELETE CASCADE,
+    decision_id INTEGER REFERENCES decision_audit_log(id) ON DELETE SET NULL,
+    event_type VARCHAR(50) NOT NULL DEFAULT 'gate_decision',
+    kernel_version_at_classification VARCHAR(64),
+    re_evaluate_after_kernel_version VARCHAR(64),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS noise_events_session_id_idx ON noise_events(session_id);
+CREATE INDEX IF NOT EXISTS noise_events_decision_id_idx ON noise_events(decision_id);
+CREATE INDEX IF NOT EXISTS noise_events_created_at_idx ON noise_events(created_at DESC);
+
 -- Step 12: B-Integrity Monitor – cycle snapshots and violations
 CREATE TABLE IF NOT EXISTS integrity_cycle_snapshots (
     id SERIAL PRIMARY KEY,

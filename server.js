@@ -9,7 +9,7 @@ import { dirname, join } from 'path';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import settings from './config.js';
 import RAGService from './ragService.js';
-import { initDb, SearchHistory, ResearchSession, ResearchAuditLog, PolicyAuditLog, DecisionAuditLog, IntegrityCycleSnapshot } from './database.js';
+import { initDb, SearchHistory, ResearchSession, ResearchAuditLog, PolicyAuditLog, DecisionAuditLog, NoiseEvent, IntegrityCycleSnapshot } from './database.js';
 import { authRouter, getCurrentUser } from './authEndpoints.js';
 import { adminRouter } from './adminEndpoints.js';
 import { StateMachine, Kernel } from './stateMachine.js';
@@ -17,6 +17,7 @@ import {
   validateAndAdvance,
   logAudit,
   getOrCreateSession,
+  getGateObservabilityContext,
   HARD_STOP_MESSAGE,
   stripSuggestions
 } from './researchGate.js';
@@ -24,6 +25,8 @@ import { runAfterCycle, getActiveViolation } from './integrityMonitor.js';
 import { runLoop } from './researchLoop.js';
 import logger from './logger.js';
 import { metricsMiddleware, getMetrics } from './metrics.js';
+import { getMetricsDashboard, getSEMOutput, getGateRecords } from './observability.js';
+import { getModelVersionHash } from './researchGate.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -59,17 +62,16 @@ app.use((req, res, next) => {
 // Scope 3: observability – metrics and latency per route (no dashboard UI)
 app.use(metricsMiddleware);
 
-// Initialize database (non-blocking on Vercel)
-// On Vercel, skip initialization at startup to avoid blocking
+// Initialize database (non-blocking on Vercel; non-fatal so server still starts if DB unreachable)
 if (!process.env.VERCEL) {
   try {
     await initDb();
   } catch (e) {
-    logger.error(`Database initialization failed: ${e.message}`);
-    throw e;
+    const msg = e.message || e.code || 'Connection failed';
+    logger.error(`Database initialization failed: ${msg}. Server will start but DB-dependent routes will return 503.`);
+    // Do not throw – allow server to listen (e.g. when Supabase is unreachable / timeout)
   }
 } else {
-  // On Vercel, database will be initialized on first use (lazy initialization)
   logger.info("Skipping database initialization on Vercel - will initialize on first use");
 }
 
@@ -134,9 +136,10 @@ async function logPolicyEnforcement(sessionId, stage) {
   }
 }
 
-/** Scope 2: log every gate decision for audit trail and replay determinism */
-async function logDecisionAudit(sessionId, stage, decision, responseType, requestQuery, inputsSnapshot, details = null) {
+/** Scope 2 + Kernel Amendment v1.2: log every gate decision with confidence_score, basis_count, model_version_hash, complexity_context */
+async function logDecisionAudit(sessionId, stage, decision, responseType, requestQuery, inputsSnapshot, details = null, opts = {}) {
   if (!DecisionAuditLog) return;
+  const gateCtx = getGateObservabilityContext();
   try {
     await DecisionAuditLog.create({
       session_id: sessionId,
@@ -145,7 +148,11 @@ async function logDecisionAudit(sessionId, stage, decision, responseType, reques
       response_type: responseType || null,
       request_query: requestQuery != null ? String(requestQuery).slice(0, 4000) : null,
       inputs_snapshot: inputsSnapshot || null,
-      details: details || null
+      details: details || null,
+      confidence_score: opts.confidence_score != null ? opts.confidence_score : gateCtx.confidence_score,
+      basis_count: opts.basis_count != null ? opts.basis_count : gateCtx.basis_count,
+      model_version_hash: opts.model_version_hash || gateCtx.model_version_hash,
+      complexity_context: opts.complexity_context || null
     });
   } catch (e) {
     logger.warn(`Decision audit log failed: ${e.message}`);
@@ -417,7 +424,12 @@ app.get("/search", async (req, res) => {
         return res.status(500).json({ error: `Research gate error: ${e.message}` });
       }
       if (!gate.ok) {
-        await logDecisionAudit(sessionId, stage, 'deny', null, query, { session_id: sessionId, stage, research_gate_locked: !!gate.research_gate_locked, error: gate.error });
+        let complexityContext = null;
+        try {
+          const info = await getRagService().getCollectionInfo();
+          complexityContext = { document_count: info?.document_count ?? 0, session_depth: 0 };
+        } catch (_) {}
+        await logDecisionAudit(sessionId, stage, 'deny', null, query, { session_id: sessionId, stage, research_gate_locked: !!gate.research_gate_locked, error: gate.error }, null, { complexity_context: complexityContext });
         return res.status(400).json({
           error: gate.error,
           research_stage_error: true,
@@ -432,7 +444,12 @@ app.get("/search", async (req, res) => {
       }
       const responseSessionId = gate.session.id;
       const responseType = gate.responseType;
-      await logDecisionAudit(responseSessionId, stage, 'allow', responseType, query, { session_id: responseSessionId, stage });
+      let complexityContext = null;
+      try {
+        const info = await getRagService().getCollectionInfo();
+        complexityContext = { document_count: info?.document_count ?? 0, session_depth: (gate.session?.completed_stages?.length) ?? 0 };
+      } catch (_) {}
+      await logDecisionAudit(responseSessionId, stage, 'allow', responseType, query, { session_id: responseSessionId, stage }, null, { complexity_context: complexityContext });
       const enforcement = await getEnforcement(responseSessionId, stage, gate.session);
       if (enforcement) await logPolicyEnforcement(responseSessionId, stage);
 
@@ -770,6 +787,94 @@ app.get("/api/audit/session/:sessionId/decisions", async (req, res) => {
       limit
     });
     return res.json({ session_id: sessionId, decisions: rows });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------- Kernel Amendment v1.2 – Observability dashboard, SEM, gates, noise ----------
+/** Metrics dashboard: False B rate, Missed B rate, confidence distribution, complexity context */
+app.get("/api/observability/dashboard", async (req, res) => {
+  try {
+    const dashboard = await getMetricsDashboard();
+    if (!dashboard) return res.status(503).json({ error: "Decision audit log not available" });
+    return res.json(dashboard);
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/** SEM output: component_breakdown, confidence_range, historical_predictive_accuracy (no single value) */
+app.get("/api/observability/sem", async (req, res) => {
+  try {
+    const sem = await getSEMOutput();
+    if (!sem) return res.status(503).json({ error: "Decision audit log not available" });
+    return res.json(sem);
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/** Gate records for dashboard: confidence_score, basis_count, model_version_hash per gate */
+app.get("/api/observability/gates", async (req, res) => {
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 100));
+  const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+  try {
+    const out = await getGateRecords(limit, offset);
+    return res.json(out);
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/** List noise events (for re-evaluation after Kernel update) */
+app.get("/api/observability/noise", async (req, res) => {
+  if (!NoiseEvent) return res.status(503).json({ error: "Noise events not available" });
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+  const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+  try {
+    const { count, rows } = await NoiseEvent.findAndCountAll({
+      order: [['created_at', 'DESC']],
+      limit,
+      offset
+    });
+    return res.json({ noise_events: rows, total: count, limit, offset });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/** Record event as noise – for later re-evaluation after Kernel update */
+app.post("/api/observability/noise", async (req, res) => {
+  if (!NoiseEvent) return res.status(503).json({ error: "Noise events not available" });
+  const { session_id: sessionId, decision_id: decisionId, event_type: eventType, re_evaluate_after_kernel_version: reEvalVersion } = req.body || {};
+  if (!sessionId) return res.status(400).json({ error: "session_id is required" });
+  try {
+    const currentHash = getModelVersionHash();
+    const row = await NoiseEvent.create({
+      session_id: sessionId,
+      decision_id: decisionId || null,
+      event_type: eventType || 'gate_decision',
+      kernel_version_at_classification: currentHash,
+      re_evaluate_after_kernel_version: reEvalVersion || null
+    });
+    return res.status(201).json(row);
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+/** Set human_feedback on a decision (false_b | missed_b) for False B / Missed B rate */
+app.patch("/api/observability/decision/:id/feedback", async (req, res) => {
+  if (!DecisionAuditLog) return res.status(503).json({ error: "Decision audit log not available" });
+  const id = parseInt(req.params.id, 10);
+  const feedback = req.body?.human_feedback;
+  if (!['false_b', 'missed_b'].includes(feedback)) return res.status(400).json({ error: "human_feedback must be 'false_b' or 'missed_b'" });
+  try {
+    const row = await DecisionAuditLog.findByPk(id);
+    if (!row) return res.status(404).json({ error: "Decision not found" });
+    await row.update({ human_feedback: feedback });
+    return res.json(row);
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }

@@ -4,11 +4,27 @@
  * When an active B-Integrity Violation exists for the session, the gate is locked.
  * Gate is deterministic: decision depends only on DB state (session, completed_stages, violations).
  */
+import crypto from 'crypto';
 import { ResearchSession, ResearchAuditLog, STAGES_ORDER } from './database.js';
 import { getActiveViolation } from './integrityMonitor.js';
 import logger from './logger.js';
 
 const VALID_STAGES = new Set(STAGES_ORDER);
+
+const GATE_VERSION = '1.2';
+/** Model version hash for Gate observability (Kernel Amendment v1.2). */
+export function getModelVersionHash() {
+  return crypto.createHash('sha256').update(`gate-${GATE_VERSION}-${STAGES_ORDER.join(',')}`).digest('hex').slice(0, 16);
+}
+
+/** Gate observability context: confidence_score, basis_count, model_version_hash. */
+export function getGateObservabilityContext() {
+  return {
+    confidence_score: 1.0,
+    basis_count: 2,
+    model_version_hash: getModelVersionHash()
+  };
+}
 
 /** Response types for audit */
 const RESPONSE_TYPE = {

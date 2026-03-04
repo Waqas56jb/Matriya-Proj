@@ -298,12 +298,69 @@ const DecisionAuditLog = sequelize ? sequelize.define('DecisionAuditLog', {
     type: DataTypes.JSONB,
     allowNull: true
   },
+  confidence_score: {
+    type: DataTypes.DECIMAL(5, 4),
+    allowNull: true
+  },
+  basis_count: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  model_version_hash: {
+    type: DataTypes.STRING(64),
+    allowNull: true
+  },
+  complexity_context: {
+    type: DataTypes.JSONB,
+    allowNull: true
+  },
+  human_feedback: {
+    type: DataTypes.STRING(20),
+    allowNull: true
+  },
   created_at: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
   }
 }, {
   tableName: 'decision_audit_log',
+  timestamps: false
+}) : null;
+
+// Noise events (Kernel Amendment v1.2 – re-evaluation after Kernel update)
+const NoiseEvent = sequelize ? sequelize.define('NoiseEvent', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  session_id: {
+    type: DataTypes.UUID,
+    allowNull: false
+  },
+  decision_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  event_type: {
+    type: DataTypes.STRING(50),
+    allowNull: false,
+    defaultValue: 'gate_decision'
+  },
+  kernel_version_at_classification: {
+    type: DataTypes.STRING(64),
+    allowNull: true
+  },
+  re_evaluate_after_kernel_version: {
+    type: DataTypes.STRING(64),
+    allowNull: true
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'noise_events',
   timestamps: false
 }) : null;
 
@@ -602,6 +659,7 @@ export {
   ResearchAuditLog,
   PolicyAuditLog,
   DecisionAuditLog,
+  NoiseEvent,
   IntegrityCycleSnapshot,
   Violation,
   SystemSnapshot,
