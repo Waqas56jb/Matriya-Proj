@@ -9,6 +9,13 @@ import settings from './config.js';
 
 const { Pool } = pg;
 
+/** Remove null bytes (0x00) - PostgreSQL UTF-8 does not allow them. */
+function sanitizeForUtf8(s) {
+  if (s == null) return '';
+  const str = typeof s === 'string' ? s : String(s);
+  return str.replace(/\0/g, '');
+}
+
 class SupabaseVectorStore {
   /**
    * Initialize Supabase vector store
@@ -310,6 +317,9 @@ class SupabaseVectorStore {
       return [];
     }
 
+    // Strip null bytes so PostgreSQL UTF-8 accepts document/metadata
+    texts = texts.map(t => sanitizeForUtf8(t));
+
     // Generate embeddings (prefer local model; wait briefly for it to finish loading on first use)
     logger.info(`Generating embeddings for ${texts.length} chunks...`);
     if (!this.embeddingModel && this._localModelReady) {
@@ -386,11 +396,13 @@ class SupabaseVectorStore {
             metadata = EXCLUDED.metadata
         `;
         
+        const documentText = sanitizeForUtf8(texts[i]);
+        const metadataJson = sanitizeForUtf8(JSON.stringify(metadatas[i], null, 0));
         await client.query(query, [
           ids[i],
           `[${embeddingArray.join(',')}]`, // Convert array to vector string format
-          texts[i],
-          JSON.stringify(metadatas[i], null, 0) // Ensure UTF-8 encoding in JSON
+          documentText,
+          metadataJson
         ]);
       }
       await client.query("COMMIT");

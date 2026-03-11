@@ -621,6 +621,201 @@ const DoEDesign = sequelize ? sequelize.define('DoEDesign', {
   timestamps: false
 }) : null;
 
+// Experiment batches (research sessions): group experiments into a series
+const ExperimentBatch = sequelize ? sequelize.define('ExperimentBatch', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  description: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'experiment_batches',
+  timestamps: false
+}) : null;
+
+// Experiments synced from lab system – for learning and similar_experiments
+const EXPERIMENT_OUTCOMES = ['success', 'failure', 'partial', 'production_formula'];
+const Experiment = sequelize ? sequelize.define('Experiment', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  experiment_id: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    comment: 'ID from lab system'
+  },
+  experiment_version: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'Version to track updates over time'
+  },
+  technology_domain: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  formula: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  materials: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    defaultValue: null
+  },
+  percentages: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    defaultValue: null
+  },
+  results: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  experiment_outcome: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'success'
+  },
+  is_production_formula: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  source_file_reference: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'Reference to original document in SharePoint'
+  },
+  experiment_batch_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: { model: 'experiment_batches', key: 'id' }
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  },
+  updated_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'experiments',
+  timestamps: false,
+  indexes: [
+    { unique: true, fields: ['experiment_id'] },
+    { fields: ['technology_domain'] },
+    { fields: ['experiment_outcome'] },
+    { fields: ['is_production_formula'] },
+    { fields: ['experiment_batch_id'] },
+    { fields: ['source_file_reference'] }
+  ]
+}) : null;
+
+// Import log: track which file created/updated what
+const ImportLog = sequelize ? sequelize.define('ImportLog', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  source_file: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    comment: 'File path or identifier (e.g. SharePoint path)'
+  },
+  source_type: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: 'sharepoint',
+    comment: 'e.g. sharepoint, lab_system'
+  },
+  created_entity_type: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'e.g. experiment, experiment_batch'
+  },
+  created_entity_id: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'ID of created/updated entity'
+  },
+  status: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'success',
+    comment: 'success, failure, partial'
+  },
+  details: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'Extra info (e.g. error message, counts)'
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'import_log',
+  timestamps: false,
+  indexes: [
+    { fields: ['source_file'] },
+    { fields: ['created_at'] }
+  ]
+}) : null;
+
+// Material library: central raw materials for analysis
+const MaterialLibrary = sequelize ? sequelize.define('MaterialLibrary', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    comment: 'Material name/code'
+  },
+  role: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'Role in formulations (e.g. binder, solvent)'
+  },
+  description: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  },
+  updated_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
+  }
+}, {
+  tableName: 'material_library',
+  timestamps: false,
+  indexes: [
+    { unique: true, fields: ['name'] },
+    { fields: ['role'] }
+  ]
+}) : null;
+
 // Initialize database
 async function initDb() {
   if (!sequelize) {
@@ -666,7 +861,11 @@ export {
   ResearchLoopRun,
   JustificationTemplate,
   DoEDesign,
-  STAGES_ORDER,
+  ExperimentBatch,
+  Experiment,
+  EXPERIMENT_OUTCOMES,
+  ImportLog,
+  MaterialLibrary,
   sequelize,
   initDb,
   getDb,

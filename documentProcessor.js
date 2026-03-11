@@ -11,6 +11,13 @@ import logger from './logger.js';
 const require = createRequire(import.meta.url);
 const XLSX = require('xlsx');
 
+/** Remove null bytes (0x00) so PostgreSQL UTF-8 and vector store accept the text. */
+function sanitizeForUtf8(s) {
+  if (s == null) return '';
+  const str = typeof s === 'string' ? s : String(s);
+  return str.replace(/\0/g, '');
+}
+
 class DocumentProcessor {
   constructor() {
     this.supportedFormats = {
@@ -61,7 +68,7 @@ class DocumentProcessor {
       
       const stats = fs.statSync(filePathObj);
       const metadata = {
-        filename: path.basename(filePathObj),
+        filename: sanitizeForUtf8(path.basename(filePathObj)),
         file_path: filePathObj,
         file_size: stats.size,
         file_type: extension,
@@ -112,24 +119,24 @@ class DocumentProcessor {
   }
 
   async _processExcel(filePath) {
-    /**Extract text from Excel file*/
+    /**Extract text from Excel file. Sanitize cell/sheet strings so no null bytes (0x00) reach the vector store.*/
     const workbook = XLSX.readFile(filePath);
     const textParts = [];
-    
+
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
-      textParts.push(`Sheet: ${sheetName}\n`);
+      textParts.push(`Sheet: ${sanitizeForUtf8(sheetName)}\n`);
       const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       for (const row of data) {
-        const rowText = row.join("\t");
+        const rowText = row.map(cell => sanitizeForUtf8(String(cell ?? ''))).join('\t');
         if (rowText.trim()) {
           textParts.push(rowText);
         }
       }
-      textParts.push("\n");
+      textParts.push('\n');
     }
-    
-    return textParts.join("\n").trim();
+
+    return sanitizeForUtf8(textParts.join('\n').trim());
   }
 }
 
