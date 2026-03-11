@@ -6,20 +6,21 @@ import logger from './logger.js';
 
 // Get database URL - Supabase only (simplest possible)
 function getDatabaseUrl() {
-  // Prefer POSTGRES_URL (pooler, works on Vercel and local)
-  // Fallback to SUPABASE_DB_URL (direct, for local development only)
-  const dbUrl = process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || process.env.SUPABASE_DB_URL;
+  const poolerUrl = process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL;
+  const directUrl = process.env.SUPABASE_DB_URL;
+  // Prefer pooler (pooler.supabase.com) so DNS resolves; db.PROJECT.supabase.co can ENOTFOUND if project paused/wrong.
+  const dbUrl = poolerUrl || directUrl;
   if (!dbUrl) {
     let errorMsg = "Database connection string not found. ";
     if (process.env.VERCEL) {
       errorMsg += "Set POSTGRES_URL in Vercel Dashboard → Settings → Environment Variables. Use Supabase pooler connection.";
     } else {
-      errorMsg += "Set POSTGRES_URL (pooler) or SUPABASE_DB_URL (direct) in your .env file.";
+      errorMsg += "Set SUPABASE_DB_URL (direct, port 5432) or POSTGRES_URL in your .env file.";
     }
     logger.error(errorMsg);
     throw new Error(errorMsg);
   }
-  if (dbUrl.includes('pooler.supabase.com')) {
+  if (dbUrl.includes('pooler.supabase.com') && dbUrl.includes('6543')) {
     logger.info("Using Supabase PostgreSQL pooler connection");
   } else {
     logger.info("Using Supabase PostgreSQL direct connection");
@@ -51,6 +52,7 @@ try {
     evict: process.env.VERCEL ? 1000 : 60000
   };
   
+  const isPooler = DATABASE_URL.includes('pooler.supabase.com');
   sequelize = new Sequelize(dbUrl, {
     dialect: 'postgres',
     logging: false,
@@ -59,7 +61,9 @@ try {
         require: true,
         rejectUnauthorized: false
       },
-      connectTimeout: process.env.VERCEL ? 5000 : 10000
+      connectTimeout: process.env.VERCEL ? 5000 : 30000,
+      // Supabase pooler (PgBouncer) does not support prepared statements
+      ...(isPooler && { prepare: false })
     },
     pool: poolConfig
   });
@@ -621,30 +625,6 @@ const DoEDesign = sequelize ? sequelize.define('DoEDesign', {
   timestamps: false
 }) : null;
 
-// Experiment batches (research sessions): group experiments into a series
-const ExperimentBatch = sequelize ? sequelize.define('ExperimentBatch', {
-  id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true
-  },
-  name: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  description: {
-    type: DataTypes.TEXT,
-    allowNull: true
-  },
-  created_at: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW
-  }
-}, {
-  tableName: 'experiment_batches',
-  timestamps: false
-}) : null;
-
 // Experiments synced from lab system – for learning and similar_experiments
 const EXPERIMENT_OUTCOMES = ['success', 'failure', 'partial', 'production_formula'];
 const Experiment = sequelize ? sequelize.define('Experiment', {
@@ -657,11 +637,6 @@ const Experiment = sequelize ? sequelize.define('Experiment', {
     type: DataTypes.STRING,
     allowNull: false,
     comment: 'ID from lab system'
-  },
-  experiment_version: {
-    type: DataTypes.STRING,
-    allowNull: true,
-    comment: 'Version to track updates over time'
   },
   technology_domain: {
     type: DataTypes.STRING,
@@ -695,16 +670,6 @@ const Experiment = sequelize ? sequelize.define('Experiment', {
     allowNull: false,
     defaultValue: false
   },
-  source_file_reference: {
-    type: DataTypes.STRING,
-    allowNull: true,
-    comment: 'Reference to original document in SharePoint'
-  },
-  experiment_batch_id: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    references: { model: 'experiment_batches', key: 'id' }
-  },
   created_at: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
@@ -720,99 +685,7 @@ const Experiment = sequelize ? sequelize.define('Experiment', {
     { unique: true, fields: ['experiment_id'] },
     { fields: ['technology_domain'] },
     { fields: ['experiment_outcome'] },
-    { fields: ['is_production_formula'] },
-    { fields: ['experiment_batch_id'] },
-    { fields: ['source_file_reference'] }
-  ]
-}) : null;
-
-// Import log: track which file created/updated what
-const ImportLog = sequelize ? sequelize.define('ImportLog', {
-  id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true
-  },
-  source_file: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    comment: 'File path or identifier (e.g. SharePoint path)'
-  },
-  source_type: {
-    type: DataTypes.STRING,
-    allowNull: true,
-    defaultValue: 'sharepoint',
-    comment: 'e.g. sharepoint, lab_system'
-  },
-  created_entity_type: {
-    type: DataTypes.STRING,
-    allowNull: true,
-    comment: 'e.g. experiment, experiment_batch'
-  },
-  created_entity_id: {
-    type: DataTypes.STRING,
-    allowNull: true,
-    comment: 'ID of created/updated entity'
-  },
-  status: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    defaultValue: 'success',
-    comment: 'success, failure, partial'
-  },
-  details: {
-    type: DataTypes.JSONB,
-    allowNull: true,
-    comment: 'Extra info (e.g. error message, counts)'
-  },
-  created_at: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW
-  }
-}, {
-  tableName: 'import_log',
-  timestamps: false,
-  indexes: [
-    { fields: ['source_file'] },
-    { fields: ['created_at'] }
-  ]
-}) : null;
-
-// Material library: central raw materials for analysis
-const MaterialLibrary = sequelize ? sequelize.define('MaterialLibrary', {
-  id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true
-  },
-  name: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    comment: 'Material name/code'
-  },
-  role: {
-    type: DataTypes.STRING,
-    allowNull: true,
-    comment: 'Role in formulations (e.g. binder, solvent)'
-  },
-  description: {
-    type: DataTypes.TEXT,
-    allowNull: true
-  },
-  created_at: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW
-  },
-  updated_at: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW
-  }
-}, {
-  tableName: 'material_library',
-  timestamps: false,
-  indexes: [
-    { unique: true, fields: ['name'] },
-    { fields: ['role'] }
+    { fields: ['is_production_formula'] }
   ]
 }) : null;
 
@@ -829,16 +702,36 @@ async function initDb() {
     throw new Error(errorMsg);
   }
   
-  try {
-    await sequelize.authenticate();
-    logger.info("Database connection authenticated");
-    await sequelize.sync({ alter: false }); // Use sync for simplicity, alter: false to avoid modifying existing tables
-    logger.info("Database tables initialized successfully");
-  } catch (e) {
-    logger.error(`Error initializing database: ${e.message}`);
-    logger.error(`Stack: ${e.stack}`);
-    throw e;
+  const maxAttempts = process.env.VERCEL ? 1 : 3;
+  const delayMs = 2000;
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await sequelize.authenticate();
+      logger.info("Database connection authenticated");
+      await sequelize.sync({ alter: false }); // Use sync for simplicity, alter: false to avoid modifying existing tables
+      logger.info("Database tables initialized successfully");
+      return;
+    } catch (e) {
+      lastError = e;
+      const cause = e.cause || e.original || e;
+      const causeMsg = cause.message || cause.code || String(cause);
+      logger.error(`Error initializing database (attempt ${attempt}/${maxAttempts}): ${e.message}`);
+      logger.error(`Cause: ${causeMsg}`);
+      if (cause.code) logger.error(`Code: ${cause.code}`);
+      if (attempt < maxAttempts && (causeMsg === 'ETIMEDOUT' || cause.code === 'ETIMEDOUT')) {
+        logger.info(`Retrying in ${delayMs / 1000}s...`);
+        await new Promise(r => setTimeout(r, delayMs));
+      } else {
+        logger.error(`Stack: ${e.stack}`);
+        if (DATABASE_URL && DATABASE_URL.includes('pooler.supabase.com') && !process.env.VERCEL) {
+          logger.error("Tip: For local development, try SUPABASE_DB_URL (direct connection, port 5432) instead of POSTGRES_URL (pooler). In Supabase: Settings → Database → Connection string → URI (direct).");
+        }
+        throw e;
+      }
+    }
   }
+  throw lastError;
 }
 
 // Get database connection (for direct queries if needed)
@@ -861,11 +754,9 @@ export {
   ResearchLoopRun,
   JustificationTemplate,
   DoEDesign,
-  ExperimentBatch,
   Experiment,
   EXPERIMENT_OUTCOMES,
-  ImportLog,
-  MaterialLibrary,
+  STAGES_ORDER,
   sequelize,
   initDb,
   getDb,

@@ -15,10 +15,7 @@
 | `percentages` | array/object | לא | אחוזים |
 | `results` | string/object | לא | תוצאות |
 | `experiment_outcome` | string | כן | תוצאת הניסוי (ראה למטה) |
-| `is_production_formula` | boolean | כן | סימון פורמולציית ייצור (פקעות שעובדות) |
-| `source_file_reference` | string | לא | הפניה למסמך המקורי ב-SharePoint |
-| `experiment_version` | string | לא | גרסת הניסוי (למעקב עדכונים לאורך זמן) |
-| `experiment_batch_id` | number | לא | קישור לסדרת ניסויים (research session) |
+| `is_production_formula` | boolean | לא | סימון פורמולציית ייצור (פקעות שעובדות) |
 
 ### ערכי `experiment_outcome`
 
@@ -110,77 +107,9 @@
 
 ---
 
-## 4. Import מקבצי SharePoint
-
-**Endpoint:** `POST /import/sharepoint-file`
-
-מקבל קובץ מקור (path) ורשימת ניסויים, מעדכן את טבלת הניסויים ורושם כל רשומה ל-**Import Log**.
-
-### Request body (JSON)
-
-```json
-{
-  "source_file": "SharePoint path or file name",
-  "source_type": "sharepoint",
-  "experiments": [ /* same schema as sync/experiments */ ],
-  "experiment_batch_id": 1
-}
-```
-
-### Response
-
-- `synced`, `errors`, `source_file` – כמו ב-sync; בנוסף כל ניסוי שנוצר/עודכן נרשם ב-import_log.
-
----
-
-## 5. Sync Validation
-
-ב-`/sync/experiments` ו-`/import/sharepoint-file` נדרשים תמיד: `technology_domain`, `experiment_outcome`, `is_production_formula`. השדות `materials` ו-`percentages` נשמרים אם נשלחו (אחרת null).
-
----
-
-## 6. Import Log
-
-טבלה `import_log`: שומרת מאיזה קובץ הגיע הדאטה ומה נוצר או עודכן.
-
-- `source_file` – קובץ מקור (למשל path ב-SharePoint)
-- `source_type` – סוג (sharepoint, lab_system)
-- `created_entity_type` – experiment / experiment_batch
-- `created_entity_id` – מזהה הישות
-- `status` – success / failure / partial
-- `details` – JSON נוסף
-
-**Endpoint:** `GET /api/import-log?limit=50&offset=0` – רשימת רשומות אחרונות.
-
----
-
-## 7. סדרות ניסויים (Research Sessions / Batches)
-
-טבלה `experiment_batches`: קיבוץ ניסויים לאותה סדרת ניסויים מחקרית.
-
-- **GET /api/experiment-batches** – רשימת סדרות
-- **POST /api/experiment-batches** – יצירת סדרה `{ name?, description? }`
-- בשדה `experiment_batch_id` בניסוי (ב-sync או import) מקשרים ניסוי לסדרה.
-
----
-
-## 8. Material Library (ספריית חומרים)
-
-טבלה `material_library`: חומרי גלם מרכזיים – מאפשרת ל-analysis להבין תפקידים (role) של חומרים בפורמולציות.
-
-- **GET /api/materials** – רשימת חומרים
-- **POST /api/materials** – הוספת חומר `{ name, role?, description? }`
-- **POST /analysis/formula** – כשנשלחים `materials`, התשובה כוללת `materials_info` (name, role, description) מהספרייה.
-
----
-
-## 9. Endpoints ב-MATRIYA (סיכום)
+## 4. Endpoints ב-MATRIYA (סיכום)
 
 | Method | Path | תיאור |
 |--------|------|--------|
-| POST | `/analysis/formula` | ניתוח פורמולציה; מחזיר similar_experiments + materials_info |
-| POST | `/sync/experiments` | סנכרון ניסויים (validation לשדות חובה) |
-| POST | `/import/sharepoint-file` | import מקבץ + רישום ב-import_log |
-| GET | `/api/import-log` | רשימת רשומות import |
-| GET/POST | `/api/experiment-batches` | סדרות ניסויים |
-| GET/POST | `/api/materials` | ספריית חומרים |
+| POST | `/analysis/formula` | ניתוח פורמולציה לפני ניסוי; מחזיר אזהרות וניסויים דומים |
+| POST | `/sync/experiments` | סנכרון snapshot ניסויים ללמידה |

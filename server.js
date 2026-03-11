@@ -9,7 +9,7 @@ import { dirname, join } from 'path';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import settings from './config.js';
 import RAGService from './ragService.js';
-import { initDb, SearchHistory, ResearchSession, ResearchAuditLog, PolicyAuditLog, DecisionAuditLog, NoiseEvent, IntegrityCycleSnapshot, Experiment, EXPERIMENT_OUTCOMES, ImportLog, ExperimentBatch, MaterialLibrary } from './database.js';
+import { initDb, SearchHistory, ResearchSession, ResearchAuditLog, PolicyAuditLog, DecisionAuditLog, NoiseEvent, IntegrityCycleSnapshot, Experiment, EXPERIMENT_OUTCOMES } from './database.js';
 import { authRouter, getCurrentUser } from './authEndpoints.js';
 import { adminRouter } from './adminEndpoints.js';
 import { StateMachine, Kernel } from './stateMachine.js';
@@ -239,14 +239,13 @@ const OUTCOMES_SET = new Set(EXPERIMENT_OUTCOMES);
 
 /**
  * POST /analysis/formula – analyze formula before experiment (domain, materials, percentages).
- * Returns status, warnings, similar_experiments, and materials_info from material library when materials are provided.
+ * Returns status, warnings, and similar_experiments from stored experiments.
  */
 app.post("/analysis/formula", async (req, res) => {
   try {
     const { domain, materials, percentages } = req.body || {};
     const warnings = [];
     let similar_experiments = [];
-    let materials_info = [];
     if (Experiment) {
       const where = {};
       if (domain && typeof domain === 'string' && domain.trim()) where.technology_domain = domain.trim();
@@ -264,31 +263,20 @@ app.post("/analysis/formula", async (req, res) => {
         is_production_formula: !!r.is_production_formula
       }));
     }
-    if (MaterialLibrary && materials != null) {
-      const names = Array.isArray(materials)
-        ? materials.map(m => (typeof m === 'string' ? m : (m && m.name) ? m.name : null)).filter(Boolean)
-        : [];
-      if (names.length) {
-        const lib = await MaterialLibrary.findAll({ where: { name: names } });
-        materials_info = lib.map(m => ({ name: m.name, role: m.role, description: m.description }));
-      }
-    }
     return res.json({
       status: 'ok',
       warnings,
-      similar_experiments,
-      materials_info
+      similar_experiments
     });
   } catch (e) {
     logger.error(`/analysis/formula error: ${e.message}`);
-    return res.status(500).json({ error: e.message, status: 'error', warnings: [], similar_experiments: [], materials_info: [] });
+    return res.status(500).json({ error: e.message, status: 'error', warnings: [], similar_experiments: [] });
   }
 });
 
 /**
  * POST /sync/experiments – lab system sends snapshot of experiments for MATRIYA to learn from.
- * Validation: technology_domain, experiment_outcome, is_production_formula required; materials & percentages stored.
- * Body: { experiments: [ { experiment_id, technology_domain, formula, materials, percentages, results, experiment_outcome, is_production_formula, source_file_reference?, experiment_version?, experiment_batch_id? }, ... ] }
+ * Body: { experiments: [ { experiment_id, technology_domain, formula, materials, percentages, results, experiment_outcome, is_production_formula? }, ... ] }
  */
 app.post("/sync/experiments", async (req, res) => {
   try {
@@ -301,32 +289,23 @@ app.post("/sync/experiments", async (req, res) => {
     if (!Experiment) {
       return res.status(503).json({ error: 'Experiments table not available', synced: 0, errors: [] });
     }
-    const required = ['technology_domain', 'experiment_outcome', 'is_production_formula'];
     for (const exp of experiments) {
       const experiment_id = exp.experiment_id != null ? String(exp.experiment_id) : null;
       if (!experiment_id) {
-        errors.push({ index: synced + errors.length, experiment_id: null, error: 'experiment_id is required' });
+        errors.push({ index: synced + errors.length, error: 'experiment_id is required' });
         continue;
       }
-      const missing = required.filter(f => exp[f] === undefined || exp[f] === null);
-      if (missing.length) {
-        errors.push({ experiment_id, error: `Missing required: ${missing.join(', ')}` });
-        continue;
-      }
-      const outcome = OUTCOMES_SET.has(exp.experiment_outcome) ? exp.experiment_outcome : 'success';
+      const outcome = exp.experiment_outcome && OUTCOMES_SET.has(exp.experiment_outcome) ? exp.experiment_outcome : 'success';
       try {
         await Experiment.upsert({
           experiment_id,
-          technology_domain: String(exp.technology_domain),
+          technology_domain: exp.technology_domain != null ? String(exp.technology_domain) : null,
           formula: exp.formula != null ? String(exp.formula) : null,
           materials: exp.materials != null ? exp.materials : null,
           percentages: exp.percentages != null ? exp.percentages : null,
           results: exp.results != null ? (typeof exp.results === 'string' ? exp.results : JSON.stringify(exp.results)) : null,
           experiment_outcome: outcome,
           is_production_formula: !!exp.is_production_formula,
-          source_file_reference: exp.source_file_reference != null ? String(exp.source_file_reference) : null,
-          experiment_version: exp.experiment_version != null ? String(exp.experiment_version) : null,
-          experiment_batch_id: exp.experiment_batch_id != null ? parseInt(exp.experiment_batch_id, 10) : null,
           updated_at: new Date()
         }, { conflictFields: ['experiment_id'] });
         synced++;
@@ -338,169 +317,6 @@ app.post("/sync/experiments", async (req, res) => {
   } catch (e) {
     logger.error(`/sync/experiments error: ${e.message}`);
     return res.status(500).json({ error: e.message, synced: 0, errors: [] });
-  }
-});
-
-/**
- * POST /import/sharepoint-file – import experiments from a file (e.g. SharePoint); writes to import_log.
- * Body (JSON): { source_file: string, source_type?: string, experiments: [...], experiment_batch_id?: number }
- * Or multipart: file + metadata. For JSON body we upsert experiments and log each to import_log.
- */
-app.post("/import/sharepoint-file", async (req, res) => {
-  try {
-    const { source_file, source_type = 'sharepoint', experiments, experiment_batch_id } = req.body || {};
-    if (!source_file || typeof source_file !== 'string' || !source_file.trim()) {
-      return res.status(400).json({ error: 'source_file is required (e.g. SharePoint path or file name)' });
-    }
-    if (!Array.isArray(experiments) || experiments.length === 0) {
-      return res.status(400).json({ error: 'experiments array is required and must be non-empty' });
-    }
-    if (!Experiment || !ImportLog) {
-      return res.status(503).json({ error: 'Import or experiments table not available' });
-    }
-    const required = ['technology_domain', 'experiment_outcome', 'is_production_formula'];
-    let synced = 0;
-    const errors = [];
-    const sourceFileRef = source_file.trim();
-    for (const exp of experiments) {
-      const experiment_id = exp.experiment_id != null ? String(exp.experiment_id) : null;
-      if (!experiment_id) {
-        errors.push({ experiment_id: null, error: 'experiment_id is required' });
-        continue;
-      }
-      const missing = required.filter(f => exp[f] === undefined || exp[f] === null);
-      if (missing.length) {
-        errors.push({ experiment_id, error: `Missing required: ${missing.join(', ')}` });
-        continue;
-      }
-      const outcome = OUTCOMES_SET.has(exp.experiment_outcome) ? exp.experiment_outcome : 'success';
-      const payload = {
-        experiment_id,
-        technology_domain: String(exp.technology_domain),
-        formula: exp.formula != null ? String(exp.formula) : null,
-        materials: exp.materials != null ? exp.materials : null,
-        percentages: exp.percentages != null ? exp.percentages : null,
-        results: exp.results != null ? (typeof exp.results === 'string' ? exp.results : JSON.stringify(exp.results)) : null,
-        experiment_outcome: outcome,
-        is_production_formula: !!exp.is_production_formula,
-        source_file_reference: sourceFileRef,
-        experiment_version: exp.experiment_version != null ? String(exp.experiment_version) : null,
-        experiment_batch_id: experiment_batch_id != null ? parseInt(experiment_batch_id, 10) : (exp.experiment_batch_id != null ? parseInt(exp.experiment_batch_id, 10) : null),
-        updated_at: new Date()
-      };
-      try {
-        await Experiment.upsert(payload, { conflictFields: ['experiment_id'] });
-        synced++;
-        await ImportLog.create({
-          source_file: sourceFileRef,
-          source_type: source_type || 'sharepoint',
-          created_entity_type: 'experiment',
-          created_entity_id: experiment_id,
-          status: 'success',
-          details: { technology_domain: payload.technology_domain }
-        });
-      } catch (e) {
-        errors.push({ experiment_id, error: e.message });
-        await ImportLog.create({
-          source_file: sourceFileRef,
-          source_type: source_type || 'sharepoint',
-          created_entity_type: 'experiment',
-          created_entity_id: experiment_id,
-          status: 'failure',
-          details: { error: e.message }
-        }).catch(() => {});
-      }
-    }
-    return res.json({ synced, errors, source_file: sourceFileRef });
-  } catch (e) {
-    logger.error(`/import/sharepoint-file error: ${e.message}`);
-    return res.status(500).json({ error: e.message, synced: 0, errors: [] });
-  }
-});
-
-/**
- * GET /api/import-log – list recent import log entries (for tracking what was imported from which file).
- */
-app.get("/api/import-log", async (req, res) => {
-  try {
-    if (!ImportLog) return res.status(503).json({ error: 'Import log not available' });
-    const limit = Math.min(100, parseInt(req.query.limit, 10) || 50);
-    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
-    const { rows, count } = await ImportLog.findAndCountAll({
-      order: [['created_at', 'DESC']],
-      limit,
-      offset
-    });
-    return res.json({ entries: rows, total: count, limit, offset });
-  } catch (e) {
-    logger.error(`/api/import-log error: ${e.message}`);
-    return res.status(500).json({ error: e.message });
-  }
-});
-
-/**
- * Experiment batches (research sessions): group experiments.
- * GET /api/experiment-batches – list batches.
- * POST /api/experiment-batches – create batch { name?, description? }.
- */
-app.get("/api/experiment-batches", async (req, res) => {
-  try {
-    if (!ExperimentBatch) return res.status(503).json({ error: 'Experiment batches not available' });
-    const batches = await ExperimentBatch.findAll({ order: [['created_at', 'DESC']] });
-    return res.json({ batches });
-  } catch (e) {
-    logger.error(`/api/experiment-batches GET error: ${e.message}`);
-    return res.status(500).json({ error: e.message });
-  }
-});
-
-app.post("/api/experiment-batches", async (req, res) => {
-  try {
-    if (!ExperimentBatch) return res.status(503).json({ error: 'Experiment batches not available' });
-    const { name, description } = req.body || {};
-    const batch = await ExperimentBatch.create({ name: name || null, description: description || null });
-    return res.status(201).json(batch);
-  } catch (e) {
-    logger.error(`/api/experiment-batches POST error: ${e.message}`);
-    return res.status(500).json({ error: e.message });
-  }
-});
-
-/**
- * Material library: central raw materials for analysis.
- * GET /api/materials – list materials.
- * POST /api/materials – add material { name, role?, description? }.
- */
-app.get("/api/materials", async (req, res) => {
-  try {
-    if (!MaterialLibrary) return res.status(503).json({ error: 'Material library not available' });
-    const materials = await MaterialLibrary.findAll({ order: [['name', 'ASC']] });
-    return res.json({ materials });
-  } catch (e) {
-    logger.error(`/api/materials GET error: ${e.message}`);
-    return res.status(500).json({ error: e.message });
-  }
-});
-
-app.post("/api/materials", async (req, res) => {
-  try {
-    if (!MaterialLibrary) return res.status(503).json({ error: 'Material library not available' });
-    const { name, role, description } = req.body || {};
-    if (!name || typeof name !== 'string' || !name.trim()) {
-      return res.status(400).json({ error: 'name is required' });
-    }
-    const material = await MaterialLibrary.create({
-      name: name.trim(),
-      role: role != null ? String(role).trim() || null : null,
-      description: description != null ? String(description) : null
-    });
-    return res.status(201).json(material);
-  } catch (e) {
-    if (e.name === 'SequelizeUniqueConstraintError') {
-      return res.status(409).json({ error: 'Material with this name already exists' });
-    }
-    logger.error(`/api/materials POST error: ${e.message}`);
-    return res.status(500).json({ error: e.message });
   }
 });
 
