@@ -166,23 +166,24 @@ const storage = multer.diskStorage({
     cb(null, dest);
   },
   filename: (req, file, cb) => {
-    // Preserve original filename (like Python version did)
-    // Add unique prefix to avoid conflicts
+    // Preserve original filename; use basename only (folder uploads send "folder/sub/file.pdf")
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    let originalName = file.originalname;
-    
+    let originalName = file.originalname || 'file';
+    // Strip any path segments (e.g. from webkitdirectory)
+    if (originalName.includes('/') || originalName.includes('\\')) {
+      originalName = originalName.replace(/^.*[/\\]/, '');
+    }
     // Fix encoding if filename is garbled (UTF-8 interpreted as Latin-1)
     try {
       if (originalName.includes('×')) {
-        // Fix UTF-8 that was decoded as Latin-1
         const buffer = Buffer.from(originalName, 'latin1');
         originalName = buffer.toString('utf-8');
       }
     } catch (e) {
       // If fixing fails, use as-is
     }
-    
-    // Keep original filename but add unique prefix
+    // Sanitize: remove null bytes and path traversal
+    originalName = originalName.replace(/\0/g, '').replace(/\.\./g, '') || 'file';
     cb(null, uniqueSuffix + '-' + originalName);
   }
 });
@@ -380,41 +381,44 @@ app.post("/ingest/file", upload.single('file'), async (req, res) => {
     logger.warn(`Could not fix filename encoding: ${e.message}, using as-is: ${originalFilename}`);
   }
   
+  let ragService;
   try {
-    // Ingest file - pass original filename so it's preserved in metadata
-    const result = await getRagService().ingestFile(tempFilePath, originalFilename);
-    
-    // Clean up temp file
+    ragService = getRagService();
+  } catch (e) {
+    logger.error(`RAG service init failed: ${e.message}`);
+    try { if (existsSync(tempFilePath)) unlinkSync(tempFilePath); } catch (_) {}
+    const isEnv = /required|environment|POSTGRES|SUPABASE/i.test(e.message);
+    return res.status(isEnv ? 503 : 500).json({
+      error: e.message,
+      hint: isEnv ? 'Check .env: POSTGRES_URL (or POSTGRES_PRISMA_URL) and Supabase/embedding config.' : undefined
+    });
+  }
+
+  try {
+    const result = await ragService.ingestFile(tempFilePath, originalFilename);
+
     try {
-      if (existsSync(tempFilePath)) {
-        unlinkSync(tempFilePath);
-      }
+      if (existsSync(tempFilePath)) unlinkSync(tempFilePath);
     } catch (e) {
       logger.warn(`Failed to delete temp file: ${e.message}`);
     }
-    
+
     if (result.success) {
       return res.json({
         success: true,
         message: "File ingested successfully",
         data: result
       });
-    } else {
-      return res.status(500).json({
-        error: result.error || 'Unknown error during ingestion'
-      });
     }
+    return res.status(500).json({
+      error: result.error || 'Unknown error during ingestion'
+    });
   } catch (e) {
     logger.error(`Error ingesting file: ${e.message}`);
     logger.error(`Stack trace: ${e.stack}`);
-    // Clean up temp file on error
     try {
-      if (existsSync(tempFilePath)) {
-        unlinkSync(tempFilePath);
-      }
-    } catch (e2) {
-      // Ignore cleanup errors
-    }
+      if (existsSync(tempFilePath)) unlinkSync(tempFilePath);
+    } catch (e2) {}
     return res.status(500).json({
       error: `Error ingesting file: ${e.message}`,
       details: process.env.NODE_ENV === 'development' ? e.stack : undefined
@@ -1061,6 +1065,39 @@ app.get("/files", async (req, res) => {
     return res.status(500).json({
       error: `Error getting files: ${e.message}`
     });
+  }
+});
+
+/**
+ * Get list of files with metadata (file type derived from name, chunks_count, uploaded_at)
+ */
+app.get("/files/detail", async (req, res) => {
+  try {
+    const files = await getRagService().getFilesWithMetadata();
+    return res.json({ files });
+  } catch (e) {
+    logger.error(`Error getting files detail: ${e.message}`);
+    return res.status(500).json({
+      error: `Error getting files detail: ${e.message}`
+    });
+  }
+});
+
+/**
+ * Get first chunk of a file for preview
+ */
+app.get("/files/preview", async (req, res) => {
+  const filename = req.query.filename;
+  if (!filename || typeof filename !== 'string') {
+    return res.status(400).json({ error: 'filename query is required' });
+  }
+  try {
+    const chunk = await getRagService().getFirstChunkForFile(filename);
+    if (!chunk) return res.status(404).json({ error: 'File not found or has no chunks' });
+    return res.json(chunk);
+  } catch (e) {
+    logger.error(`Error getting file preview: ${e.message}`);
+    return res.status(500).json({ error: `Error getting file preview: ${e.message}` });
   }
 });
 

@@ -520,7 +520,17 @@ ${answer}
     /**Get list of all unique filenames in the collection*/
     return await this.vectorStore.getAllFilenames();
   }
-  
+
+  async getFilesWithMetadata() {
+    /**Get list of files with chunk count and upload date*/
+    return await this.vectorStore.getFilesWithMetadata();
+  }
+
+  async getFirstChunkForFile(filename) {
+    /**Get first chunk for file preview*/
+    return await this.vectorStore.getFirstChunkForFile(filename);
+  }
+
   async deleteDocuments(ids) {
     /**Delete documents by IDs*/
     const result = await this.vectorStore.deleteDocuments(ids);

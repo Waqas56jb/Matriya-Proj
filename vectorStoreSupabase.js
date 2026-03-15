@@ -564,6 +564,53 @@ class SupabaseVectorStore {
     }
   }
 
+  async getFilesWithMetadata() {
+    /**Get list of files with chunk count and earliest created_at per file*/
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT metadata->>'filename' as filename,
+               COUNT(*)::int as chunks_count,
+               MIN(created_at) as uploaded_at
+        FROM ${this.collectionName}
+        WHERE metadata->>'filename' IS NOT NULL
+        GROUP BY metadata->>'filename'
+        ORDER BY MIN(created_at) DESC, filename
+      `);
+      return result.rows.map(row => ({
+        filename: row.filename,
+        chunks_count: row.chunks_count || 0,
+        uploaded_at: row.uploaded_at ? row.uploaded_at.toISOString() : null
+      }));
+    } catch (e) {
+      logger.error(`Error getting files with metadata: ${e.message}`);
+      return [];
+    } finally {
+      client.release();
+    }
+  }
+
+  async getFirstChunkForFile(filename) {
+    /**Get first chunk text and metadata for a file (for preview)*/
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `SELECT document, metadata FROM ${this.collectionName}
+         WHERE metadata->>'filename' = $1
+         LIMIT 1`,
+        [filename]
+      );
+      if (result.rows.length === 0) return null;
+      const row = result.rows[0];
+      return { text: row.document, metadata: row.metadata || {} };
+    } catch (e) {
+      logger.error(`Error getting first chunk: ${e.message}`);
+      return null;
+    } finally {
+      client.release();
+    }
+  }
+
   async getCollectionInfo() {
     /**Get information about the collection*/
     const client = await this.pool.connect();
