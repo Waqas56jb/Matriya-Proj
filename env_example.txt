@@ -29,8 +29,8 @@ OPENAI_API_KEY=your-openai-api-key
 # JWT Secret (generate a random string)
 JWT_SECRET=your-random-secret-key-here
 
-# Collection Name
-COLLECTION_NAME=documents
+# Collection Name (must match table created in supabase_setup_complete.sql)
+COLLECTION_NAME=rag_documents
 
 # File Upload Settings (for Vercel, UPLOAD_DIR should be /tmp)
 MAX_FILE_SIZE=52428800

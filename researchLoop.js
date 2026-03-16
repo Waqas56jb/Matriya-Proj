@@ -104,6 +104,11 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
         text = (text || '') + `[System note: No document content was found in the system for the selected file "${fileLabel}". Tell the user in Hebrew, briefly: לא נמצא תוכן במערכת עבור הקובץ שנבחר. ייתכן שהקובץ טרם עובד (אינדוקס) או שהשם לא תואם. נסה לבחור "כל הקבצים" או לבדוק שהקובץ מופיע ברשימה ולהמתין לסיום העיבוד.]
 `;
       }
+      // When searching "all files" but RAG returned no context (empty collection or no matches), tell the user clearly
+      if (isAllFiles && (!text || text.length < 100)) {
+        text = (text || '') + `[System note: No document content was found in the RAG system. Tell the user in Hebrew, briefly: לא נמצא תוכן במערכת. ייתכן שקבצים טרם עובדו (אינדוקס) בסביבה זו. וודא שהקבצים הועלו ושה-Matriya בסביבת ה-production מקבלת את העלאת הקבצים (MATRIYA_BACK_URL) ומחוברת לאותה מסד נתונים.]
+`;
+      }
       ragContext = text;
     }
   } catch (e) {
