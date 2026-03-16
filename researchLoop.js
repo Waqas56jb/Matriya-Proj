@@ -83,6 +83,10 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
     if (ragService.generateAnswer) {
       const res = await ragService.generateAnswer(query, nResults, filterMetadata || null, false);
       let text = (res.context || res.results?.map(r => r.document || r.content).join('\n') || '').slice(0, maxContextChars);
+      const hadFileFilter = filterMetadata && (
+        (Array.isArray(filterMetadata.filenames) && filterMetadata.filenames.length > 0) ||
+        (typeof filterMetadata.filename === 'string' && filterMetadata.filename.trim())
+      );
       if (filterMetadata) {
         const files = Array.isArray(filterMetadata.filenames) && filterMetadata.filenames.length > 0
           ? filterMetadata.filenames
@@ -91,6 +95,14 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
           const sourceLine = `Sources (files) this answer is based on: ${files.join(', ')}.\n\n`;
           text = sourceLine + text;
         }
+      }
+      // When user asked about a specific file but no content was found, give agents a clear instruction instead of empty context (avoids LLM inventing "אין מידע זמין...")
+      if (hadFileFilter && (!text || text.length < 100)) {
+        const fileLabel = Array.isArray(filterMetadata.filenames) && filterMetadata.filenames.length > 0
+          ? filterMetadata.filenames[0]
+          : (filterMetadata.filename || '').trim();
+        text = (text || '') + `[System note: No document content was found in the system for the selected file "${fileLabel}". Tell the user in Hebrew, briefly: לא נמצא תוכן במערכת עבור הקובץ שנבחר. ייתכן שהקובץ טרם עובד (אינדוקס) או שהשם לא תואם. נסה לבחור "כל הקבצים" או לבדוק שהקובץ מופיע ברשימה ולהמתין לסיום העיבוד.]
+`;
       }
       ragContext = text;
     }

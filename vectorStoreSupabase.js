@@ -473,9 +473,11 @@ class SupabaseVectorStore {
             params.push(value);
             paramIndex++;
           } else if (key === 'filename' && typeof value === 'string' && value) {
-            conditions.push(`metadata->>'filename' = $${paramIndex}`);
-            params.push(value);
-            paramIndex++;
+            // Exact match or path-style match (e.g. "folder/name.pdf" when asking for "name.pdf")
+            const escaped = value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+            conditions.push(`(metadata->>'filename' = $${paramIndex} OR metadata->>'filename' LIKE $${paramIndex + 1})`);
+            params.push(value, '%' + escaped);
+            paramIndex += 2;
           } else if (key !== 'filenames' && value != null) {
             conditions.push(`metadata->>'${key}' = $${paramIndex}`);
             params.push(value);
