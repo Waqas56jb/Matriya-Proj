@@ -508,11 +508,18 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
     if (typeof f === 'string') try { const a = JSON.parse(f); return Array.isArray(a) ? a.filter(x => typeof x === 'string' && x.trim()) : []; } catch (_) { return []; }
     return [];
   })();
+  const MAX_FILE_CONTEXT_CHARS = 80000;
+  const MAX_HISTORY_MESSAGES = 20;
+
   if (filenames.length > 0) {
     const rag = getRagService();
     for (const fn of filenames) {
+      if (fileContext.length >= MAX_FILE_CONTEXT_CHARS) break;
       const text = await rag.getFullTextForFile(fn);
-      if (text) fileContext += `\n--- ${fn} ---\n${text}\n`;
+      if (text) {
+        const chunk = `\n--- ${fn} ---\n${text}\n`;
+        fileContext += fileContext.length + chunk.length <= MAX_FILE_CONTEXT_CHARS ? chunk : chunk.slice(0, MAX_FILE_CONTEXT_CHARS - fileContext.length);
+      }
     }
   } else if (files.length > 0) {
     const tempPaths = [];
@@ -520,8 +527,9 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
       for (const f of files) {
         tempPaths.push(f.path);
         const result = await docProcessor.processFile(f.path);
-        if (result.success && result.text) {
-          fileContext += `\n--- ${result.metadata?.filename || f.originalname} ---\n${result.text}\n`;
+        if (result.success && result.text && fileContext.length < MAX_FILE_CONTEXT_CHARS) {
+          const chunk = `\n--- ${result.metadata?.filename || f.originalname} ---\n${result.text}\n`;
+          fileContext += fileContext.length + chunk.length <= MAX_FILE_CONTEXT_CHARS ? chunk : chunk.slice(0, MAX_FILE_CONTEXT_CHARS - fileContext.length);
         }
       }
     } finally {
@@ -539,9 +547,14 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
   const systemContent = fileContext
     ? `The user has attached the following document content. Answer questions based on it. You must respond in Hebrew (עברית) only. Do not use Arabic.\n\nDocuments:\n${fileContext}`
     : "You are a helpful research assistant. You must respond in Hebrew (עברית) only. Do not use Arabic.";
+  const MAX_MESSAGE_CONTENT_CHARS = 4000;
+  const trimmedHistory = (Array.isArray(history) ? history.slice(-MAX_HISTORY_MESSAGES) : []).map(m => ({
+    ...m,
+    content: typeof m.content === 'string' ? m.content.slice(0, MAX_MESSAGE_CONTENT_CHARS) : m.content
+  }));
   const messages = [
     { role: "system", content: systemContent },
-    ...history,
+    ...trimmedHistory,
     { role: "user", content: message }
   ];
   try {
