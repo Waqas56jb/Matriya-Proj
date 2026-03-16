@@ -381,29 +381,38 @@ class SupabaseVectorStore {
       ids = texts.map((text, i) => this._generateId(text, metadatas[i]));
     }
 
-    // Insert into database
+    // Insert into database in batches (avoids hundreds of round-trips and apparent "stuck" on large files)
+    const BATCH_SIZE = 50;
     const client = await this.pool.connect();
     try {
-      // Insert documents one by one (simpler for pgvector)
-      for (let i = 0; i < texts.length; i++) {
-        const embeddingArray = Array.isArray(embeddings[i]) ? embeddings[i] : (embeddings[i].data || embeddings[i]);
+      for (let start = 0; start < texts.length; start += BATCH_SIZE) {
+        const end = Math.min(start + BATCH_SIZE, texts.length);
+        const batchNum = Math.floor(start / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(texts.length / BATCH_SIZE);
+        logger.info(`Inserting batch ${batchNum}/${totalBatches} (chunks ${start + 1}-${end})...`);
+        const placeholders = [];
+        const params = [];
+        let p = 1;
+        for (let i = start; i < end; i++) {
+          placeholders.push(`($${p}, $${p + 1}::vector, $${p + 2}, $${p + 3}::jsonb)`);
+          const embeddingArray = Array.isArray(embeddings[i]) ? embeddings[i] : (embeddings[i].data || embeddings[i]);
+          params.push(
+            ids[i],
+            `[${embeddingArray.join(',')}]`,
+            sanitizeForUtf8(texts[i]),
+            sanitizeForUtf8(JSON.stringify(metadatas[i], null, 0))
+          );
+          p += 4;
+        }
         const query = `
           INSERT INTO ${this.collectionName} (id, embedding, document, metadata)
-          VALUES ($1, $2::vector, $3, $4::jsonb)
+          VALUES ${placeholders.join(', ')}
           ON CONFLICT (id) DO UPDATE SET
             embedding = EXCLUDED.embedding,
             document = EXCLUDED.document,
             metadata = EXCLUDED.metadata
         `;
-        
-        const documentText = sanitizeForUtf8(texts[i]);
-        const metadataJson = sanitizeForUtf8(JSON.stringify(metadatas[i], null, 0));
-        await client.query(query, [
-          ids[i],
-          `[${embeddingArray.join(',')}]`, // Convert array to vector string format
-          documentText,
-          metadataJson
-        ]);
+        await client.query(query, params);
       }
       await client.query("COMMIT");
       logger.info(`Added ${texts.length} documents to vector store`);
@@ -605,6 +614,27 @@ class SupabaseVectorStore {
       return { text: row.document, metadata: row.metadata || {} };
     } catch (e) {
       logger.error(`Error getting first chunk: ${e.message}`);
+      return null;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getFullTextForFile(filename) {
+    /**Get all chunk texts for a file concatenated (for Ask Matriya context)*/
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `SELECT document, (metadata->>'chunk_index')::int AS chunk_index
+         FROM ${this.collectionName}
+         WHERE metadata->>'filename' = $1
+         ORDER BY (metadata->>'chunk_index')::int ASC NULLS LAST`,
+        [filename]
+      );
+      if (result.rows.length === 0) return null;
+      return result.rows.map(r => r.document).join('\n\n');
+    } catch (e) {
+      logger.error(`Error getting full text for file: ${e.message}`);
       return null;
     } finally {
       client.release();

@@ -13,21 +13,22 @@ function getAgentPrompt(agentName, query, previousOutput, ragContext = null) {
   const prev = previousOutput ? `\n\nPrevious step output:\n${String(previousOutput).slice(0, 2000)}` : '';
   const docContext = ragContext ? `\n\nDocument context (use if relevant):\n${String(ragContext).slice(0, 5000)}` : '';
   const base = `Query: ${query}${prev}${docContext}`;
+  const hebrewOnly = ' Always respond in Hebrew (עברית) only. Do not use Arabic.';
   const prompts = {
     analysis: {
-      system: 'You are the analysis agent. Analyze the query and previous context. Output a concise analysis in the same language as the query.',
+      system: 'You are the analysis agent. Analyze the query and previous context. Output a concise analysis in Hebrew (עברית) only.' + hebrewOnly,
       user: base
     },
     research: {
-      system: 'You are the research agent. Based on the analysis and document context above, produce a short research summary. Use the same language as the query.',
+      system: 'You are the research agent. Based on the analysis and document context above, produce a short research summary in Hebrew (עברית) only.' + hebrewOnly,
       user: base
     },
     critic: {
-      system: 'You are the critic agent. Review the research output critically. Point out gaps or strengths briefly. Same language as the query.',
+      system: 'You are the critic agent. Review the research output critically. Point out gaps or strengths briefly. Respond in Hebrew (עברית) only.' + hebrewOnly,
       user: base
     },
     synthesis: {
-      system: 'You are the synthesis agent. Synthesize the analysis, research, and critique into a final concise conclusion. Same language as the query.',
+      system: 'You are the synthesis agent. Synthesize the analysis, research, and critique into a final concise conclusion in Hebrew (עברית) only. Do not use Arabic.',
       user: base
     }
   };

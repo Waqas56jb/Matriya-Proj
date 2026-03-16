@@ -10,7 +10,9 @@ import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import settings from './config.js';
 import RAGService from './ragService.js';
 import { initDb, SearchHistory, ResearchSession, ResearchAuditLog, PolicyAuditLog, DecisionAuditLog, NoiseEvent, IntegrityCycleSnapshot, Experiment, EXPERIMENT_OUTCOMES } from './database.js';
-import { authRouter, getCurrentUser } from './authEndpoints.js';
+import { authRouter, getCurrentUser, requireAuth } from './authEndpoints.js';
+import DocumentProcessor from './documentProcessor.js';
+import axios from 'axios';
 import { adminRouter } from './adminEndpoints.js';
 import { StateMachine, Kernel } from './stateMachine.js';
 import {
@@ -341,7 +343,7 @@ app.post("/ingest/file", upload.single('file'), async (req, res) => {
   const fileExt = file.originalname.substring(file.originalname.lastIndexOf('.')).toLowerCase();
   if (!settings.ALLOWED_EXTENSIONS.includes(fileExt)) {
     return res.status(400).json({
-      error: `File type ${fileExt} not supported. Allowed: ${settings.ALLOWED_EXTENSIONS.join(', ')}`
+      error: `סוג קובץ ${fileExt} לא נתמך לאינדוקס. פורמטים מותרים: ${settings.ALLOWED_EXTENSIONS.join(', ')}`
     });
   }
   
@@ -451,6 +453,103 @@ app.post("/ingest/directory", async (req, res) => {
     logger.error(`Error ingesting directory: ${e.message}`);
     return res.status(500).json({
       error: `Error ingesting directory: ${e.message}`
+    });
+  }
+});
+
+/**
+ * Ask Matriya: chat with AI about selected files (OpenAI).
+ * Body: JSON { message, history?, filenames? } for system files, or multipart (message, history, files) for uploads.
+ */
+const docProcessor = new DocumentProcessor();
+const askMatriyaMulter = (req, res, next) => {
+  if (req.is('application/json')) return next();
+  return upload.array('files', 10)(req, res, next);
+};
+app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
+  const message = (req.body?.message ?? '').trim();
+  if (!message) {
+    return res.status(400).json({ error: "message is required" });
+  }
+  let history = [];
+  try {
+    const raw = req.body?.history;
+    if (raw != null) {
+      history = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (!Array.isArray(history)) history = [];
+    }
+  } catch (_) {
+    history = [];
+  }
+  let fileContext = '';
+  const files = req.files || [];
+  const filenames = (() => {
+    const f = req.body?.filenames;
+    if (Array.isArray(f)) return f.filter(x => typeof x === 'string' && x.trim());
+    if (typeof f === 'string') try { const a = JSON.parse(f); return Array.isArray(a) ? a.filter(x => typeof x === 'string' && x.trim()) : []; } catch (_) { return []; }
+    return [];
+  })();
+  if (filenames.length > 0) {
+    const rag = getRagService();
+    for (const fn of filenames) {
+      const text = await rag.getFullTextForFile(fn);
+      if (text) fileContext += `\n--- ${fn} ---\n${text}\n`;
+    }
+  } else if (files.length > 0) {
+    const tempPaths = [];
+    try {
+      for (const f of files) {
+        tempPaths.push(f.path);
+        const result = await docProcessor.processFile(f.path);
+        if (result.success && result.text) {
+          fileContext += `\n--- ${result.metadata?.filename || f.originalname} ---\n${result.text}\n`;
+        }
+      }
+    } finally {
+      for (const p of tempPaths) {
+        try {
+          if (existsSync(p)) unlinkSync(p);
+        } catch (_) {}
+      }
+    }
+  }
+  const openaiKey = settings.OPENAI_API_KEY;
+  if (!openaiKey) {
+    return res.status(503).json({ error: "OpenAI API key not configured. Set OPENAI_API_KEY in .env." });
+  }
+  const systemContent = fileContext
+    ? `The user has attached the following document content. Answer questions based on it. You must respond in Hebrew (עברית) only. Do not use Arabic.\n\nDocuments:\n${fileContext}`
+    : "You are a helpful research assistant. You must respond in Hebrew (עברית) only. Do not use Arabic.";
+  const messages = [
+    { role: "system", content: systemContent },
+    ...history,
+    { role: "user", content: message }
+  ];
+  try {
+    const response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-4o-mini",
+        messages,
+        max_tokens: 1024,
+        temperature: 0.7
+      },
+      {
+        headers: {
+          "Authorization": `Bearer ${openaiKey}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 60000
+      }
+    );
+    const reply = response.data?.choices?.[0]?.message?.content?.trim() || "";
+    return res.json({ reply });
+  } catch (e) {
+    const status = e.response?.status;
+    const msg = e.response?.data?.error?.message || e.message || "OpenAI request failed";
+    logger.error(`Ask Matriya OpenAI error: ${msg}`);
+    return res.status(status === 401 ? 401 : status === 429 ? 429 : 500).json({
+      error: msg
     });
   }
 });
@@ -1110,12 +1209,26 @@ app.get("/files/preview", async (req, res) => {
  * Returns:
  *   Deletion result
  */
+app.delete("/files", async (req, res) => {
+  const { filename } = req.body || {};
+  if (!filename || typeof filename !== "string" || !filename.trim()) {
+    return res.status(400).json({ error: "filename is required in body" });
+  }
+  try {
+    const deleted = await getRagService().deleteDocumentsByFilename(filename.trim());
+    return res.json({ success: true, message: `Deleted ${deleted} chunks`, deleted_count: deleted });
+  } catch (e) {
+    logger.error(`Error deleting file: ${e.message}`);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 app.delete("/documents", async (req, res) => {
   const { ids } = req.body;
   if (!ids || !Array.isArray(ids)) {
     return res.status(400).json({ error: "ids array is required" });
   }
-  
+
   try {
     const success = await getRagService().deleteDocuments(ids);
     if (success) {

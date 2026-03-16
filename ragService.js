@@ -531,12 +531,23 @@ ${answer}
     return await this.vectorStore.getFirstChunkForFile(filename);
   }
 
+  async getFullTextForFile(filename) {
+    /**Get full text of a file from all chunks (for Ask Matriya)*/
+    return await this.vectorStore.getFullTextForFile(filename);
+  }
+
   async deleteDocuments(ids) {
     /**Delete documents by IDs*/
     const result = await this.vectorStore.deleteDocuments(ids);
     return result.deleted_count > 0;
   }
-  
+
+  async deleteDocumentsByFilename(filename) {
+    /**Delete all chunks for a given filename*/
+    const result = await this.vectorStore.deleteDocuments(null, { filename });
+    return result.deleted_count || 0;
+  }
+
   async resetDatabase() {
     /**Reset the entire vector database*/
     return await this.vectorStore.resetCollection();

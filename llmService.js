@@ -44,8 +44,8 @@ class LLMService {
       return null;
     }
     
-    // Format prompt for instruction-tuned models
-    const systemPrompt = "Based on the given context, answer the question clearly and concisely. Answer in the same language as the question.";
+    // Format prompt for instruction-tuned models – require Hebrew to avoid Arabic drift
+    const systemPrompt = "Based on the given context, answer the question clearly and concisely. You must respond in Hebrew (עברית) only. Do not use Arabic.";
     const userContent = `Context:\n${context}\n\nQuestion: ${question}`;
     
     try {
@@ -96,7 +96,7 @@ class LLMService {
         }
       } else {
         // Hugging Face: keep prompt format
-        const prompt = `Based on the following context, answer the question clearly and concisely. IMPORTANT: Answer in the same language as the question.\n\nContext:\n${context}\n\nQuestion: ${question}\n\nAnswer (in the same language as the question):`;
+        const prompt = `Based on the following context, answer the question clearly and concisely. IMPORTANT: You must respond in Hebrew (עברית) only. Do not use Arabic.\n\nContext:\n${context}\n\nQuestion: ${question}\n\nAnswer (in Hebrew only):`;
         // Hugging Face API format
         const response = await axios.post(
           this.apiUrl,

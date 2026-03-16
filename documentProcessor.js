@@ -119,11 +119,11 @@ class DocumentProcessor {
   }
 
   async _processExcel(filePath) {
-    /**Extract text from Excel file. Sanitize cell/sheet strings so no null bytes (0x00) reach the vector store.*/
+    /**Extract text from Excel file (all sheets). Sanitize cell/sheet strings so no null bytes (0x00) reach the vector store.*/
     const workbook = XLSX.readFile(filePath);
     const textParts = [];
 
-    for (const sheetName of workbook.SheetNames) {
+    for (const sheetName of workbook.SheetNames || []) {
       const sheet = workbook.Sheets[sheetName];
       textParts.push(`Sheet: ${sanitizeForUtf8(sheetName)}\n`);
       const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });

@@ -43,6 +43,9 @@ class Settings {
     this.TOGETHER_MODEL = process.env.TOGETHER_MODEL || "mistralai/Mistral-7B-Instruct-v0.2";
     this.HF_API_TOKEN = process.env.HF_API_TOKEN || null;
     this.HF_MODEL = process.env.HF_MODEL || "microsoft/phi-2";
+
+    // OpenAI (for Ask Matriya chat)
+    this.OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;
   }
 }
 
