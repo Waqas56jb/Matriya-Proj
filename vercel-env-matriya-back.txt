@@ -1,0 +1,24 @@
+# Copy each line into Vercel → matriya-back → Environment Variables (name = left of =, value = right of =)
+# Replace placeholders with your real values from Supabase / API providers.
+
+POSTGRES_URL=postgres://postgres.PROJECT_REF:PASSWORD@aws-1-REGION.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true
+POSTGRES_PRISMA_URL=postgres://postgres.PROJECT_REF:PASSWORD@aws-1-REGION.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true
+COLLECTION_NAME=rag_documents
+SUPABASE_URL=https://PROJECT_REF.supabase.co
+SUPABASE_KEY=your-supabase-anon-key
+OPENAI_API_KEY=your-openai-key
+JWT_SECRET=your-jwt-secret
+LLM_PROVIDER=together
+TOGETHER_API_KEY=your-together-api-key
+TOGETHER_MODEL=Qwen/Qwen3-Next-80B-A3B-Instruct
+HF_API_TOKEN=your-hf-token
+HF_MODEL=microsoft/phi-2
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+UPLOAD_DIR=/tmp
+MAX_FILE_SIZE=52428800
+CHUNK_SIZE=500
+CHUNK_OVERLAP=100
+API_HOST=0.0.0.0
+API_PORT=8000
+DB_MODE=default
+CHROMA_DB_PATH=./chroma_db

@@ -211,16 +211,29 @@ app.get("/", (req, res) => {
   });
 });
 
+/** Redact POSTGRES_URL to a short fingerprint so local vs prod can be compared (same DB = same fingerprint). */
+function getDbFingerprint() {
+  const url = process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || "";
+  if (!url) return null;
+  const m = url.match(/@([^/]+?)(?::\d+)?(?:\/|$)/);
+  return m ? m[1] : null; // e.g. "abc123.pooler.supabase.com"
+}
+
 /**
- * Health check endpoint (Scope 3: includes metrics and latency)
+ * Health check endpoint (Scope 3: includes metrics and latency).
+ * db_fingerprint: same on local and prod when using the same DB (compare to verify).
  */
 app.get("/health", async (req, res) => {
   try {
     const info = await getRagService().getCollectionInfo();
     const metrics = getMetrics();
+    const dbFingerprint = getDbFingerprint();
+    const collectionName = process.env.COLLECTION_NAME || "rag_documents";
     return res.json({
       status: "healthy",
       vector_db: info,
+      db_fingerprint: dbFingerprint,
+      collection_name: collectionName,
       metrics: {
         total_requests: metrics.total_requests,
         total_errors: metrics.total_errors,
