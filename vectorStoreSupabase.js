@@ -3,6 +3,7 @@
  */
 import pg from 'pg';
 import crypto from 'crypto';
+import path from 'path';
 import axios from 'axios';
 import logger from './logger.js';
 import settings from './config.js';
@@ -439,10 +440,15 @@ class SupabaseVectorStore {
      * Returns:
      *   List of search results
      */
-    // Generate query embedding
+    // Generate query embedding (prefer local model; wait for it so we avoid HF 410 / OpenAI 401 on first request)
+    if (!this.embeddingModel && this._localModelReady) {
+      await Promise.race([
+        this._localModelReady,
+        new Promise(r => setTimeout(r, 15000))
+      ]);
+    }
     let queryEmbedding;
     if (this.embeddingModel) {
-      // Use local model if available (like Python's sentence-transformers)
       try {
         const result = await this.embeddingModel(query, { pooling: 'mean', normalize: true });
         queryEmbedding = Array.from(result.data);
@@ -452,7 +458,6 @@ class SupabaseVectorStore {
         queryEmbedding = Array.isArray(embeddings[0]) ? embeddings[0] : (embeddings[0].data || embeddings[0]);
       }
     } else {
-      // Use API for embeddings (on Vercel or if local model not available)
       const embeddings = await this._generateEmbeddingsApi([query]);
       queryEmbedding = Array.isArray(embeddings[0]) ? embeddings[0] : (embeddings[0].data || embeddings[0]);
     }
@@ -473,11 +478,15 @@ class SupabaseVectorStore {
             params.push(value);
             paramIndex++;
           } else if (key === 'filename' && typeof value === 'string' && value) {
-            // Exact match or path-style match (e.g. "folder/name.pdf" when asking for "name.pdf")
+            // Exact match, path suffix (LIKE '%value'), or match by basename so "Report.pdf" matches "folder/Report.pdf"
             const escaped = value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-            conditions.push(`(metadata->>'filename' = $${paramIndex} OR metadata->>'filename' LIKE $${paramIndex + 1})`);
-            params.push(value, '%' + escaped);
-            paramIndex += 2;
+            const basename = path.basename(value);
+            const escapedBasename = basename.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+            conditions.push(
+              `(metadata->>'filename' = $${paramIndex} OR metadata->>'filename' LIKE $${paramIndex + 1} OR metadata->>'filename' = $${paramIndex + 2} OR metadata->>'filename' LIKE $${paramIndex + 3})`
+            );
+            params.push(value, '%' + escaped, basename, '%' + escapedBasename);
+            paramIndex += 4;
           } else if (key !== 'filenames' && value != null) {
             conditions.push(`metadata->>'${key}' = $${paramIndex}`);
             params.push(value);
@@ -519,6 +528,23 @@ class SupabaseVectorStore {
       if (totalCount === 0) {
         logger.warn("No documents in table, returning empty results");
         return [];
+      }
+
+      // When filtering by file, log how many rows match the filter (helps debug "0 results" when table has docs)
+      if (whereClause) {
+        try {
+          const filterCountResult = await client.query(
+            `SELECT COUNT(*) FROM ${this.collectionName} ${whereClause}`,
+            params.slice(0, params.length - 3)
+          );
+          const filterCount = parseInt(filterCountResult.rows[0].count);
+          logger.info(`Documents matching filename filter: ${filterCount}`);
+          if (filterCount === 0) {
+            logger.warn("No documents match the file filter – file may not be indexed or name may differ. Try 'all files' or check indexed filenames.");
+          }
+        } catch (countErr) {
+          logger.debug(`Filter count check failed (non-fatal): ${countErr.message}`);
+        }
       }
 
       // Execute the search query

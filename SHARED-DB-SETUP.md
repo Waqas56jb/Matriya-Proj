@@ -33,9 +33,21 @@ curl -s https://matriya-back.vercel.app/health | jq '.db_fingerprint, .collectio
 
 If `db_fingerprint` differs, production is using a different database. Update Vercel’s `POSTGRES_URL` to match your local `.env` and redeploy.
 
-## 3. After fixing env, re-run ingest for production
+## 3. Index into Supabase so prod can use the same data
+
+Ingest writes to the **Matriya** Supabase DB (`rag_documents`) — the one in matriya-back’s `POSTGRES_URL`. To make sure production has the same content, run the index script **with the production Matriya URL** (or `both` for local + prod).
 
 From `maneger-back`:
+
+```bash
+# Populate prod DB only (recommended if local and prod share the same POSTGRES_URL)
+node scripts/index-all-files-to-matriya.js https://matriya-back.vercel.app
+
+# Or populate both local and prod in one run (if they use different DBs)
+node scripts/index-all-files-to-matriya.js both
+```
+
+Or use the fix script (indexes all files to prod, then runs the prod check):
 
 ```bash
 node scripts/fix-rag-prod.js https://matriya-back.vercel.app

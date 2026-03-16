@@ -5,7 +5,7 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import path, { dirname, join } from 'path';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import settings from './config.js';
 import RAGService from './ragService.js';
@@ -814,8 +814,14 @@ app.post("/api/research/run", async (req, res) => {
       });
     }
 
-    const filenamesArray = Array.isArray(filenamesBody) && filenamesBody.length > 0 ? filenamesBody.filter(f => typeof f === 'string' && f.trim()) : null;
-    const filterMetadata = filenamesArray?.length ? { filenames: filenamesArray } : (filename && typeof filename === 'string' && filename.trim() ? { filename: filename.trim() } : null);
+    let filenamesArray = Array.isArray(filenamesBody) && filenamesBody.length > 0 ? filenamesBody.filter(f => typeof f === 'string' && f.trim()) : null;
+    // When a single file is selected, also try basename so we match whether RAG stored "file.pdf" or "folder/file.pdf"
+    if (!filenamesArray?.length && filename && typeof filename === 'string' && filename.trim()) {
+      const trimmed = filename.trim();
+      const base = path.basename(trimmed);
+      filenamesArray = base !== trimmed ? [trimmed, base] : [trimmed];
+    }
+    const filterMetadata = filenamesArray?.length ? { filenames: filenamesArray } : null;
     const runOptions = {};
     if (preJustification != null && typeof preJustification === 'string') runOptions.pre_justification_text = preJustification.trim() || null;
     if (doeDesignId != null) runOptions.doe_design_id = parseInt(doeDesignId, 10) || null;
