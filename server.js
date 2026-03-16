@@ -395,7 +395,13 @@ app.post("/ingest/file", upload.single('file'), async (req, res) => {
   } catch (e) {
     logger.warn(`Could not fix filename encoding: ${e.message}, using as-is: ${originalFilename}`);
   }
-  
+
+  // When uploading a folder, frontend sends relative_path (e.g. "FolderName/sub/file.pdf") so we store and display as folder
+  const relativePath = req.body && typeof req.body.relative_path === 'string' && req.body.relative_path.trim();
+  const displayFilename = relativePath
+    ? relativePath.replace(/\0/g, '').replace(/\.\./g, '').trim() || originalFilename
+    : originalFilename;
+
   let ragService;
   try {
     ragService = getRagService();
@@ -410,7 +416,7 @@ app.post("/ingest/file", upload.single('file'), async (req, res) => {
   }
 
   try {
-    const result = await ragService.ingestFile(tempFilePath, originalFilename);
+    const result = await ragService.ingestFile(tempFilePath, displayFilename);
 
     try {
       if (existsSync(tempFilePath)) unlinkSync(tempFilePath);
