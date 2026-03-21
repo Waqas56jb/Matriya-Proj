@@ -36,6 +36,7 @@ import {
   getOpenAiApiBase
 } from './lib/openaiMatriyaConfig.js';
 import { syncMatriyaRagToOpenAI } from './lib/matriyaOpenAiSync.js';
+import { scheduleMatriyaOpenAiSyncAfterIngest } from './lib/matriyaOpenAiAutoSync.js';
 import {
   extractOpenAiResponsesOutputText,
   openAiResponsesFileSearch,
@@ -421,6 +422,7 @@ app.post("/ingest/file", upload.single('file'), async (req, res) => {
     }
 
     if (result.success) {
+      scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'ingest/file');
       return res.json({
         success: true,
         message: "File ingested successfully",
@@ -463,6 +465,9 @@ app.post("/ingest/directory", async (req, res) => {
   
   try {
     const result = await getRagService().ingestDirectory(directory_path);
+    if (result && result.successful > 0) {
+      scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'ingest/directory');
+    }
     return res.json(result);
   } catch (e) {
     logger.error(`Error ingesting directory: ${e.message}`);
