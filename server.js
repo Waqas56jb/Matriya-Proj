@@ -51,14 +51,13 @@ const __dirname = dirname(__filename);
 // Initialize Express app
 const app = express();
 
-// CORS configuration - Allow all origins
-logger.info("CORS configured to allow all origins");
+// CORS: must not combine origin: "*" with credentials: true (browsers block; looks like "no CORS header").
+// origin: true echoes the request Origin so preflight succeeds for matriya-front.vercel.app, localhost, etc.
+logger.info("CORS: dynamic origin (reflect Origin), credentials off (Bearer in Authorization is fine)");
 app.use(cors({
-  origin: "*",
+  origin: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
-  allowedHeaders: "*",
-  exposedHeaders: "*",
-  credentials: true,
+  credentials: false,
   maxAge: 3600
 }));
 
