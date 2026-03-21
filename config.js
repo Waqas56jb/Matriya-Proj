@@ -46,6 +46,9 @@ class Settings {
 
     // OpenAI (for Ask Matriya chat)
     this.OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;
+    // OpenAI File Search (Responses API): set USE_OPENAI_FILE_SEARCH=true and sync documents (or MATRIYA_OPENAI_VECTOR_STORE_ID)
+    this.OPENAI_API_BASE = process.env.OPENAI_API_BASE || 'https://api.openai.com/v1';
+    this.OPENAI_RAG_MODEL = process.env.OPENAI_RAG_MODEL || 'gpt-4o-mini';
   }
 }
 

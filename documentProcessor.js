@@ -7,6 +7,7 @@ import { createRequire } from 'module';
 import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import logger from './logger.js';
+import { decodeTextFileBuffer } from './lib/textEncoding.js';
 
 const require = createRequire(import.meta.url);
 const XLSX = require('xlsx');
@@ -105,22 +106,20 @@ class DocumentProcessor {
   }
 
   async _processTxt(filePath) {
-    /**Extract text from plain text file*/
-    try {
-      return fs.readFileSync(filePath, 'utf-8');
-    } catch (e) {
-      // Try with different encoding
-      try {
-        return fs.readFileSync(filePath, 'latin1');
-      } catch (e2) {
-        throw new Error(`Failed to read text file: ${e2.message}`);
-      }
-    }
+    /**Extract text from plain text file (UTF-8 / BOM / Windows-1255 Hebrew).*/
+    const buf = fs.readFileSync(filePath);
+    return decodeTextFileBuffer(buf);
   }
 
   async _processExcel(filePath) {
     /**Extract text from Excel file (all sheets). Sanitize cell/sheet strings so no null bytes (0x00) reach the vector store.*/
-    const workbook = XLSX.readFile(filePath);
+    const buf = fs.readFileSync(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const readOpts = { type: 'buffer' };
+    if (ext === '.xls') {
+      readOpts.codepage = 1255;
+    }
+    const workbook = XLSX.read(buf, readOpts);
     const textParts = [];
 
     for (const sheetName of workbook.SheetNames || []) {

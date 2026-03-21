@@ -125,8 +125,16 @@ class Kernel {
           docAnswer = await this.ragService.llmService.generateAnswer(query, docContext);
         }
       } else {
-        // Get answer from RAG (Doc Agent)
-        const docResult = await this.ragService.generateAnswer(query, 5, filterMetadata, true);
+        // Get answer from RAG (Doc Agent) — deeper retrieval when cloud doc search is on / all documents
+        const singleFile =
+          filterMetadata &&
+          typeof filterMetadata.filename === 'string' &&
+          filterMetadata.filename.trim();
+        let nDoc = singleFile ? 8 : 12;
+        if (!singleFile && this.ragService._openAiFileSearchReady && this.ragService._openAiFileSearchReady()) {
+          nDoc = 24;
+        }
+        const docResult = await this.ragService.generateAnswer(query, nDoc, filterMetadata, true);
         docAnswer = docResult.answer;
         docContext = docResult.context || '';
         docSearchResults = docResult.results || [];

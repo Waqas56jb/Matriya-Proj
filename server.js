@@ -29,6 +29,20 @@ import logger from './logger.js';
 import { metricsMiddleware, getMetrics } from './metrics.js';
 import { getMetricsDashboard, getSEMOutput, getGateRecords } from './observability.js';
 import { getModelVersionHash } from './researchGate.js';
+import {
+  getMatriyaOpenAiVectorStoreId,
+  persistMatriyaOpenAiVectorStoreId,
+  useOpenAiFileSearchEnabled,
+  getOpenAiApiBase
+} from './lib/openaiMatriyaConfig.js';
+import { syncMatriyaRagToOpenAI } from './lib/matriyaOpenAiSync.js';
+import {
+  extractOpenAiResponsesOutputText,
+  openAiResponsesFileSearch,
+  buildMatriyaCatalogAppendix,
+  MATRIYA_FILE_SEARCH_INSTRUCTIONS_ANSWER
+} from './lib/openaiFileSearchMatriya.js';
+import { repairUtf8MisdecodedAsLatin1 } from './lib/textEncoding.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -175,15 +189,7 @@ const storage = multer.diskStorage({
     if (originalName.includes('/') || originalName.includes('\\')) {
       originalName = originalName.replace(/^.*[/\\]/, '');
     }
-    // Fix encoding if filename is garbled (UTF-8 interpreted as Latin-1)
-    try {
-      if (originalName.includes('×')) {
-        const buffer = Buffer.from(originalName, 'latin1');
-        originalName = buffer.toString('utf-8');
-      }
-    } catch (e) {
-      // If fixing fails, use as-is
-    }
+    originalName = repairUtf8MisdecodedAsLatin1(originalName);
     // Sanitize: remove null bytes and path traversal
     originalName = originalName.replace(/\0/g, '').replace(/\.\./g, '') || 'file';
     cb(null, uniqueSuffix + '-' + originalName);
@@ -351,9 +357,14 @@ app.post("/ingest/file", upload.single('file'), async (req, res) => {
   if (!file.originalname) {
     return res.status(400).json({ error: "No file selected" });
   }
-  
-  // Validate file extension
-  const fileExt = file.originalname.substring(file.originalname.lastIndexOf('.')).toLowerCase();
+
+  let originalFilename = Buffer.isBuffer(file.originalname)
+    ? file.originalname.toString('utf-8')
+    : String(file.originalname);
+  originalFilename = repairUtf8MisdecodedAsLatin1(originalFilename);
+
+  // Validate file extension (use repaired name — raw multipart name may be mojibake)
+  const fileExt = originalFilename.substring(originalFilename.lastIndexOf('.')).toLowerCase();
   if (!settings.ALLOWED_EXTENSIONS.includes(fileExt)) {
     return res.status(400).json({
       error: `סוג קובץ ${fileExt} לא נתמך לאינדוקס. פורמטים מותרים: ${settings.ALLOWED_EXTENSIONS.join(', ')}`
@@ -368,39 +379,24 @@ app.post("/ingest/file", upload.single('file'), async (req, res) => {
   }
   
   const tempFilePath = file.path;
-  // Get original filename and fix encoding issues
-  // Browsers often send filenames in RFC 2231 format or URL-encoded
-  let originalFilename = file.originalname;
-  
-  // Handle different encoding scenarios
-  if (Buffer.isBuffer(originalFilename)) {
-    originalFilename = originalFilename.toString('utf-8');
-  }
-  
-  // Try to fix garbled UTF-8 (when UTF-8 bytes are interpreted as Latin-1)
-  // This happens when browsers send UTF-8 but it's decoded as Latin-1
+
   try {
-    // If filename contains garbled characters (like ×), try to fix it
-    if (originalFilename.includes('×')) {
-      // Convert to Buffer and re-decode as UTF-8
-      const buffer = Buffer.from(originalFilename, 'latin1');
-      originalFilename = buffer.toString('utf-8');
-      logger.info(`Fixed filename encoding: ${originalFilename}`);
-    }
-    
-    // Also try URL decoding if it contains encoded characters
     if (originalFilename.includes('%') && /%[0-9A-F]{2}/i.test(originalFilename)) {
       originalFilename = decodeURIComponent(originalFilename);
+      originalFilename = repairUtf8MisdecodedAsLatin1(originalFilename);
     }
   } catch (e) {
-    logger.warn(`Could not fix filename encoding: ${e.message}, using as-is: ${originalFilename}`);
+    logger.warn(`Could not URL-decode filename: ${e.message}`);
   }
 
   // When uploading a folder, frontend sends relative_path (e.g. "FolderName/sub/file.pdf") so we store and display as folder
-  const relativePath = req.body && typeof req.body.relative_path === 'string' && req.body.relative_path.trim();
-  const displayFilename = relativePath
-    ? relativePath.replace(/\0/g, '').replace(/\.\./g, '').trim() || originalFilename
-    : originalFilename;
+  let relativePath = req.body && typeof req.body.relative_path === 'string' && req.body.relative_path.trim();
+  if (relativePath) {
+    relativePath = repairUtf8MisdecodedAsLatin1(
+      relativePath.replace(/\0/g, '').replace(/\.\./g, '').trim()
+    );
+  }
+  const displayFilename = relativePath || originalFilename;
 
   let ragService;
   try {
@@ -544,6 +540,42 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
   if (!openaiKey) {
     return res.status(503).json({ error: "OpenAI API key not configured. Set OPENAI_API_KEY in .env." });
   }
+
+  const useOpenAiFs =
+    useOpenAiFileSearchEnabled() &&
+    getMatriyaOpenAiVectorStoreId() &&
+    filenames.length === 0 &&
+    files.length === 0;
+
+  if (useOpenAiFs) {
+    const MAX_MESSAGE_CONTENT_CHARS = 4000;
+    const trimmedHistory = (Array.isArray(history) ? history.slice(-MAX_HISTORY_MESSAGES) : []).map(m => ({
+      ...m,
+      content: typeof m.content === 'string' ? m.content.slice(0, MAX_MESSAGE_CONTENT_CHARS) : m.content
+    }));
+    const historyLines = trimmedHistory
+      .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : ''}`)
+      .join('\n');
+    const input = historyLines ? `${historyLines}\nuser: ${message}` : message;
+    try {
+      let catalogAppendix = '';
+      try {
+        catalogAppendix = buildMatriyaCatalogAppendix(await getRagService().getAllFilenames());
+      } catch (_) {}
+      const data = await openAiResponsesFileSearch({
+        query: input,
+        instructions: MATRIYA_FILE_SEARCH_INSTRUCTIONS_ANSWER,
+        maxNumResults: 24,
+        filterMetadata: null,
+        catalogAppendix
+      });
+      const reply = extractOpenAiResponsesOutputText(data);
+      return res.json({ reply: reply || '' });
+    } catch (e) {
+      logger.warn(`Ask Matriya file_search failed, falling back to chat/completions: ${e.message}`);
+    }
+  }
+
   const systemContent = fileContext
     ? `The user has attached the following document content. Answer questions based on it. You must respond in Hebrew (עברית) only. Do not use Arabic.\n\nDocuments:\n${fileContext}`
     : "You are a helpful research assistant. You must respond in Hebrew (עברית) only. Do not use Arabic.";
@@ -1188,14 +1220,132 @@ app.get("/collection/info", async (req, res) => {
 });
 
 /**
+ * OpenAI File Search status (vector store + env flags). Aligns with manager Documents GPT RAG UX.
+ */
+app.get("/gpt-rag/status", async (req, res) => {
+  const key = (settings.OPENAI_API_KEY || '').trim();
+  if (!key) {
+    return res.json({
+      configured: false,
+      openai: false,
+      reason: 'cloud_doc_key_missing',
+      use_openai_file_search: useOpenAiFileSearchEnabled()
+    });
+  }
+  const enabled = useOpenAiFileSearchEnabled();
+  const vsId = getMatriyaOpenAiVectorStoreId();
+  if (!enabled) {
+    return res.json({
+      configured: true,
+      openai: true,
+      use_openai_file_search: false,
+      vector_store_id: vsId || null,
+      hint: 'cloud_file_search_disabled'
+    });
+  }
+  if (!vsId) {
+    return res.json({
+      configured: true,
+      openai: true,
+      use_openai_file_search: true,
+      vector_store_id: null,
+      vector_store_status: null,
+      hint: 'sync_required'
+    });
+  }
+  try {
+    const base = getOpenAiApiBase();
+    const r = await axios.get(`${base}/vector_stores/${vsId}`, {
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+    return res.json({
+      configured: true,
+      openai: true,
+      use_openai_file_search: true,
+      vector_store_id: vsId,
+      vector_store_status: r.data?.status || null,
+      file_counts: r.data?.file_counts || null
+    });
+  } catch (e) {
+    return res.json({
+      configured: true,
+      openai: true,
+      use_openai_file_search: true,
+      vector_store_id: vsId,
+      vector_store_status: 'unknown',
+      warning: e.response?.data?.error?.message || e.message
+    });
+  }
+});
+
+/**
+ * Sync indexed Matriya documents (extracted text) into a new OpenAI vector store; persists store id under uploads.
+ */
+app.post("/gpt-rag/sync", async (req, res) => {
+  const key = (settings.OPENAI_API_KEY || '').trim();
+  if (!key) {
+    return res.status(503).json({ error: 'OPENAI_API_KEY not set' });
+  }
+  let rag;
+  try {
+    rag = getRagService();
+  } catch (e) {
+    return res.status(503).json({ error: e.message || 'RAG service unavailable' });
+  }
+  try {
+    const result = await syncMatriyaRagToOpenAI(rag, {
+      openaiApiKey: key,
+      openaiBase: getOpenAiApiBase(),
+      onLog: (msg) => logger.info(`[gpt-rag/sync] ${msg}`)
+    });
+    if (!result.ok) {
+      return res.status(result.status).json({
+        error: result.error,
+        skipped: result.skipped,
+        uploaded: result.uploaded,
+        batch_id: result.batch_id
+      });
+    }
+    persistMatriyaOpenAiVectorStoreId(result.vector_store_id);
+    return res.json({
+      ok: true,
+      vector_store_id: result.vector_store_id,
+      uploaded: result.uploaded,
+      skipped: result.skipped,
+      batch_status: result.batch_status
+    });
+  } catch (e) {
+    logger.error(`gpt-rag/sync: ${e.message}`);
+    return res.status(500).json({ error: e.response?.data?.error?.message || e.message || 'Sync failed' });
+  }
+});
+
+function gptFileSearchMeta(ragInstance) {
+  const base = {
+    use_openai_file_search: useOpenAiFileSearchEnabled(),
+    vector_store_configured: Boolean(getMatriyaOpenAiVectorStoreId()),
+    active: false
+  };
+  try {
+    if (ragInstance && typeof ragInstance.openAiFileSearchActive === 'function') {
+      base.active = ragInstance.openAiFileSearchActive();
+    }
+  } catch (_) {}
+  return base;
+}
+
+/**
  * Get list of all uploaded files
  */
 app.get("/files", async (req, res) => {
   try {
-    const filenames = await getRagService().getAllFilenames();
+    const rag = getRagService();
+    const filenames = await rag.getAllFilenames();
     return res.json({
       files: filenames,
-      count: filenames.length
+      count: filenames.length,
+      gpt_file_search: gptFileSearchMeta(rag)
     });
   } catch (e) {
     logger.error(`Error getting files: ${e.message}`);
@@ -1210,8 +1360,9 @@ app.get("/files", async (req, res) => {
  */
 app.get("/files/detail", async (req, res) => {
   try {
-    const files = await getRagService().getFilesWithMetadata();
-    return res.json({ files });
+    const rag = getRagService();
+    const files = await rag.getFilesWithMetadata();
+    return res.json({ files, gpt_file_search: gptFileSearchMeta(rag) });
   } catch (e) {
     logger.error(`Error getting files detail: ${e.message}`);
     return res.status(500).json({

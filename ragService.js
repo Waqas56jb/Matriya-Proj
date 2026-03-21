@@ -9,10 +9,51 @@ import LLMService from './llmService.js';
 import logger from './logger.js';
 import { readdirSync, statSync } from 'fs';
 import { join, extname } from 'path';
+import { getMatriyaOpenAiVectorStoreId, useOpenAiFileSearchEnabled } from './lib/openaiMatriyaConfig.js';
+import { openAiFileSearchAnswerAndSnippets } from './lib/openaiFileSearchMatriya.js';
 
 class RAGService {
   /**Main service for RAG operations*/
-  
+
+  _openAiFileSearchReady() {
+    return (
+      useOpenAiFileSearchEnabled() &&
+      Boolean(getMatriyaOpenAiVectorStoreId()) &&
+      Boolean((settings.OPENAI_API_KEY || '').trim())
+    );
+  }
+
+  /** Exposed for HTTP status / UI (OpenAI file search replaces vector retrieval when enabled). */
+  openAiFileSearchActive() {
+    return this._openAiFileSearchReady();
+  }
+
+  async _catalogFilenamesForOpenAi() {
+    try {
+      return await this.getAllFilenames();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  _snippetsToSearchResults(snippets, nResults) {
+    const list = Array.isArray(snippets) ? snippets : [];
+    const out = [];
+    const cap = Math.max(1, nResults || 5);
+    for (let i = 0; i < Math.min(list.length, cap * 2); i++) {
+      const s = list[i];
+      const docText = s?.text || '';
+      const filename = s?.filename || 'Unknown';
+      out.push({
+        document: docText,
+        metadata: { filename },
+        distance: 0.15 + i * 0.01,
+        relevance_score: 1 - i * 0.05
+      });
+    }
+    return out.slice(0, cap);
+  }
+
   constructor() {
     this.documentProcessor = new DocumentProcessor();
     this.chunker = new TextChunker(
@@ -202,6 +243,30 @@ class RAGService {
      * Returns:
      *   List of search results, sorted by relevance
      */
+    if (this._openAiFileSearchReady()) {
+      try {
+        const catalogFilenames = await this._catalogFilenamesForOpenAi();
+        const { snippets, answerText } = await openAiFileSearchAnswerAndSnippets(query, filterMetadata, {
+          forContextOnly: true,
+          catalogFilenames
+        });
+        let mapped = this._snippetsToSearchResults(snippets, nResults);
+        if (mapped.length === 0 && answerText) {
+          mapped = [
+            {
+              document: answerText,
+              metadata: { filename: 'חיפוש במסמכים (מאגר מסונכרן)' },
+              distance: 0.1,
+              relevance_score: 1
+            }
+          ];
+        }
+        if (mapped.length > 0) return mapped;
+      } catch (e) {
+        logger.warn(`OpenAI file search (search) failed, using vector RAG: ${e.message}`);
+      }
+    }
+
     // Search with more results initially, then re-rank
     const initialResults = await this.vectorStore.search(query, nResults * 3, filterMetadata);
     
@@ -299,6 +364,50 @@ class RAGService {
      * Returns:
      *   Dictionary with search results and generated answer
      */
+    if (this._openAiFileSearchReady()) {
+      try {
+        const catalogFilenames = await this._catalogFilenamesForOpenAi();
+        const { answerText, snippets } = await openAiFileSearchAnswerAndSnippets(query, filterMetadata, {
+          forContextOnly: !useLlm,
+          catalogFilenames
+        });
+        let searchResults = this._snippetsToSearchResults(snippets, nResults);
+        if (searchResults.length === 0 && answerText) {
+          searchResults = [
+            {
+              document: answerText,
+              metadata: { filename: 'חיפוש במסמכים (מאגר מסונכרן)' },
+              distance: 0.1,
+              relevance_score: 1
+            }
+          ];
+        }
+        const contextParts = [];
+        for (let i = 0; i < Math.min(searchResults.length, nResults); i++) {
+          const result = searchResults[i];
+          const docText = result.document || '';
+          const filename = result.metadata?.filename || 'Unknown';
+          contextParts.push(`[Source ${i + 1} from ${filename}]:\n${docText}\n`);
+        }
+        const context = contextParts.length ? contextParts.join('\n') : answerText || '';
+        const answer = useLlm ? answerText || null : null;
+        if (!searchResults.length && !answer && !context) {
+          throw new Error('No cloud document search results');
+        }
+        return {
+          query,
+          results: searchResults,
+          results_count: searchResults.length,
+          answer,
+          context_used: contextParts.length || (context ? 1 : 0),
+          context,
+          error: null
+        };
+      } catch (e) {
+        logger.warn(`OpenAI file search (generateAnswer) failed, using vector RAG: ${e.message}`);
+      }
+    }
+
     let searchResults;
     try {
       searchResults = await this.search(query, nResults, filterMetadata);

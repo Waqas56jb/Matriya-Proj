@@ -74,9 +74,16 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
   let ragContext = null;
 
   // When searching a single file, use fewer chunks; when no filter or multiple filenames (project scope), use more
-  const singleFileFilter = filterMetadata && typeof filterMetadata.filename === 'string' && filterMetadata.filename.trim();
+  const filenamesList =
+    filterMetadata && Array.isArray(filterMetadata.filenames)
+      ? filterMetadata.filenames.filter((f) => typeof f === 'string' && f.trim())
+      : [];
+  const singleFilename =
+    filterMetadata && typeof filterMetadata.filename === 'string' && filterMetadata.filename.trim();
+  const singleFileFilter = Boolean(singleFilename) || filenamesList.length === 1;
   const isAllFiles = !singleFileFilter;
-  const nResults = isAllFiles ? 20 : 5;
+  const cloudReady = ragService._openAiFileSearchReady && ragService._openAiFileSearchReady();
+  const nResults = isAllFiles ? (cloudReady ? 24 : 16) : 8;
   const maxContextChars = isAllFiles ? 6000 : 3000;
 
   try {
