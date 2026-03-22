@@ -1293,8 +1293,12 @@ app.get("/gpt-rag/status", async (req, res) => {
   try {
     const base = getOpenAiApiBase();
     const r = await axios.get(`${base}/vector_stores/${vsId}`, {
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      timeout: 30000
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        'OpenAI-Beta': 'assistants=v2'
+      },
+      timeout: 12000
     });
     return res.json({
       configured: true,
