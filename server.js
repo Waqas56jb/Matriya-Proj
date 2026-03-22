@@ -42,7 +42,10 @@ import {
   extractOpenAiResponsesOutputText,
   openAiResponsesFileSearch,
   buildMatriyaCatalogAppendix,
-  MATRIYA_FILE_SEARCH_INSTRUCTIONS_ANSWER
+  MATRIYA_FILE_SEARCH_INSTRUCTIONS_ANSWER,
+  collectFileSearchSnippetsFromResponse,
+  normalizeEvidenceSources,
+  evidenceFromSearchResults
 } from './lib/openaiFileSearchMatriya.js';
 import { repairUtf8MisdecodedAsLatin1 } from './lib/textEncoding.js';
 
@@ -505,6 +508,14 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
     history = [];
   }
   let fileContext = '';
+  /** Excerpts actually passed to the model (for UI “מקורות” on Upload / Ask). */
+  const fileEvidenceSources = [];
+  const pushFileEvidence = (filename, rawText) => {
+    const raw = String(rawText || '').trim();
+    if (!raw) return;
+    const excerpt = raw.length > 4000 ? `${raw.slice(0, 4000)}…` : raw;
+    fileEvidenceSources.push({ filename: String(filename || '—'), excerpt });
+  };
   const files = req.files || [];
   const filenames = (() => {
     const f = req.body?.filenames;
@@ -521,6 +532,7 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
       if (fileContext.length >= MAX_FILE_CONTEXT_CHARS) break;
       const text = await rag.getFullTextForFile(fn);
       if (text) {
+        pushFileEvidence(fn, text);
         const chunk = `\n--- ${fn} ---\n${text}\n`;
         fileContext += fileContext.length + chunk.length <= MAX_FILE_CONTEXT_CHARS ? chunk : chunk.slice(0, MAX_FILE_CONTEXT_CHARS - fileContext.length);
       }
@@ -532,6 +544,7 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
         tempPaths.push(f.path);
         const result = await docProcessor.processFile(f.path);
         if (result.success && result.text && fileContext.length < MAX_FILE_CONTEXT_CHARS) {
+          pushFileEvidence(result.metadata?.filename || f.originalname, result.text);
           const chunk = `\n--- ${result.metadata?.filename || f.originalname} ---\n${result.text}\n`;
           fileContext += fileContext.length + chunk.length <= MAX_FILE_CONTEXT_CHARS ? chunk : chunk.slice(0, MAX_FILE_CONTEXT_CHARS - fileContext.length);
         }
@@ -580,7 +593,8 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
         catalogAppendix
       });
       const reply = extractOpenAiResponsesOutputText(data);
-      return res.json({ reply: reply || '' });
+      const sources = normalizeEvidenceSources(collectFileSearchSnippetsFromResponse(data));
+      return res.json({ reply: reply || '', sources });
     } catch (e) {
       logger.warn(`Ask Matriya file_search failed, falling back to chat/completions: ${e.message}`);
     }
@@ -617,7 +631,10 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
       }
     );
     const reply = response.data?.choices?.[0]?.message?.content?.trim() || "";
-    return res.json({ reply });
+    const sources = normalizeEvidenceSources(
+      fileEvidenceSources.map((s) => ({ filename: s.filename, text: s.excerpt }))
+    );
+    return res.json({ reply, sources });
   } catch (e) {
     const status = e.response?.status;
     const msg = e.response?.data?.error?.message || e.message || "OpenAI request failed";
@@ -726,6 +743,7 @@ app.get("/search", async (req, res) => {
           answer: HARD_STOP_MESSAGE,
           context_sources: 0,
           context: '',
+          sources: [],
           session_id: responseSessionId,
           research_stage: stage,
           response_type: responseType,
@@ -753,6 +771,7 @@ app.get("/search", async (req, res) => {
             answer: 'לא נמצא מידע רלוונטי במסמכים.',
             context_sources: 0,
             context: '',
+            sources: evidenceFromSearchResults(kernelResult.search_results || []),
             session_id: responseSessionId,
             research_stage: stage,
             response_type: 'no_results',
@@ -767,6 +786,7 @@ app.get("/search", async (req, res) => {
           answer: null,
           context_sources: 0,
           context: '',
+          sources: [],
           error: kernelResult.reason || 'תשובה נחסמה',
           decision: kernelResult.decision,
           state: kernelResult.state,
@@ -813,6 +833,7 @@ app.get("/search", async (req, res) => {
         answer,
         context_sources: kernelResult.agent_results.doc_agent.context_sources || 0,
         context: kernelResult.context || '',
+        sources: evidenceFromSearchResults(kernelResult.search_results || []),
         error: null,
         decision: kernelResult.decision,
         state: kernelResult.state,
@@ -833,7 +854,8 @@ app.get("/search", async (req, res) => {
         query: query,
         results_count: results.length,
         results: results,
-        answer: null
+        answer: null,
+        sources: evidenceFromSearchResults(results)
       });
     }
   } catch (e) {
@@ -900,7 +922,8 @@ app.post("/api/research/run", async (req, res) => {
       return res.json({
         run_id: result.run_id,
         outputs: result.outputs,
-        justifications: result.justifications
+        justifications: result.justifications,
+        sources: Array.isArray(result.sources) ? result.sources : []
       });
     }
 

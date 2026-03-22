@@ -6,6 +6,7 @@
 import logger from './logger.js';
 import { ResearchLoopRun } from './database.js';
 import { getJustificationDisplay } from './justificationTemplates.js';
+import { evidenceFromSearchResults } from './lib/openaiFileSearchMatriya.js';
 
 const AGENT_ORDER = ['analysis', 'research', 'critic', 'synthesis'];
 
@@ -72,6 +73,7 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
 
   let previousOutput = null;
   let ragContext = null;
+  let ragEvidenceSources = [];
 
   // When searching a single file, use fewer chunks; when no filter or multiple filenames (project scope), use more
   const filenamesList =
@@ -89,6 +91,7 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
   try {
     if (ragService.generateAnswer) {
       const res = await ragService.generateAnswer(query, nResults, filterMetadata || null, false);
+      ragEvidenceSources = evidenceFromSearchResults(res.results || []);
       let text = (res.context || res.results?.map(r => r.document || r.content).join('\n') || '').slice(0, maxContextChars);
       const hadFileFilter = filterMetadata && (
         (Array.isArray(filterMetadata.filenames) && filterMetadata.filenames.length > 0) ||
@@ -135,7 +138,8 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
         run_id: null,
         outputs,
         justifications,
-        error: `Agent ${agentName} failed: ${error}`
+        error: `Agent ${agentName} failed: ${error}`,
+        sources: ragEvidenceSources
       };
     }
     const out = (output || '').trim();
@@ -162,7 +166,8 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
     run_id: runRecord?.id ?? null,
     outputs,
     justifications,
-    duration_ms: durationMs
+    duration_ms: durationMs,
+    sources: ragEvidenceSources
   };
 }
 
