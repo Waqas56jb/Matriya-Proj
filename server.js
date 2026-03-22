@@ -555,7 +555,13 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
         catalogAppendix
       });
       const reply = extractOpenAiResponsesOutputText(data);
-      const sources = normalizeEvidenceSources(collectFileSearchSnippetsFromResponse(data));
+      const sources = normalizeEvidenceSources(
+        collectFileSearchSnippetsFromResponse(data),
+        undefined,
+        undefined,
+        message,
+        reply
+      );
       return res.json({ reply: reply || '', sources });
     } catch (e) {
       logger.warn(`Ask Matriya file_search failed, falling back to injected document text: ${e.message}`);
@@ -762,7 +768,13 @@ app.get("/search", async (req, res) => {
             answer: 'לא נמצא מידע רלוונטי במסמכים.',
             context_sources: 0,
             context: '',
-            sources: evidenceFromSearchResults(kernelResult.search_results || []),
+            sources: evidenceFromSearchResults(
+              kernelResult.search_results || [],
+              undefined,
+              undefined,
+              query,
+              'לא נמצא מידע רלוונטי במסמכים.'
+            ),
             session_id: responseSessionId,
             research_stage: stage,
             response_type: 'no_results',
@@ -824,7 +836,7 @@ app.get("/search", async (req, res) => {
         answer,
         context_sources: kernelResult.agent_results.doc_agent.context_sources || 0,
         context: kernelResult.context || '',
-        sources: evidenceFromSearchResults(kernelResult.search_results || []),
+        sources: evidenceFromSearchResults(kernelResult.search_results || [], undefined, undefined, query, answer),
         error: null,
         decision: kernelResult.decision,
         state: kernelResult.state,
@@ -846,7 +858,7 @@ app.get("/search", async (req, res) => {
         results_count: results.length,
         results: results,
         answer: null,
-        sources: evidenceFromSearchResults(results)
+        sources: evidenceFromSearchResults(results, undefined, undefined, query, null)
       });
     }
   } catch (e) {
@@ -1338,6 +1350,7 @@ app.post("/gpt-rag/sync", async (req, res) => {
       ok: true,
       vector_store_id: result.vector_store_id,
       uploaded: result.uploaded,
+      incremental: Boolean(result.incremental),
       skipped: result.skipped,
       batch_status: result.batch_status,
       indexing_pending: Boolean(result.indexing_pending),

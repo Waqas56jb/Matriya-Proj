@@ -14,7 +14,10 @@ import {
   hydrateMatriyaOpenAiVectorStoreId,
   useOpenAiFileSearchEnabled
 } from './lib/openaiMatriyaConfig.js';
-import { openAiFileSearchAnswerAndSnippets } from './lib/openaiFileSearchMatriya.js';
+import {
+  openAiFileSearchAnswerAndSnippets,
+  selectRankedSnippetList
+} from './lib/openaiFileSearchMatriya.js';
 
 class RAGService {
   /**Main service for RAG operations*/
@@ -40,12 +43,12 @@ class RAGService {
     }
   }
 
-  _snippetsToSearchResults(snippets, nResults) {
-    const list = Array.isArray(snippets) ? snippets : [];
-    const out = [];
+  _snippetsToSearchResults(snippets, nResults, query = '', answerText = '') {
     const cap = Math.max(1, nResults || 5);
-    for (let i = 0; i < Math.min(list.length, cap * 2); i++) {
-      const s = list[i];
+    const ranked = selectRankedSnippetList(snippets, query, answerText, cap);
+    const out = [];
+    for (let i = 0; i < ranked.length; i++) {
+      const s = ranked[i];
       const docText = s?.text || '';
       const filename = s?.filename || 'Unknown';
       out.push({
@@ -55,7 +58,7 @@ class RAGService {
         relevance_score: 1 - i * 0.05
       });
     }
-    return out.slice(0, cap);
+    return out;
   }
 
   constructor() {
@@ -255,7 +258,7 @@ class RAGService {
           forContextOnly: true,
           catalogFilenames
         });
-        let mapped = this._snippetsToSearchResults(snippets, nResults);
+        let mapped = this._snippetsToSearchResults(snippets, nResults, query, '');
         if (mapped.length === 0 && answerText) {
           mapped = [
             {
@@ -377,7 +380,7 @@ class RAGService {
           forContextOnly: !useLlm,
           catalogFilenames
         });
-        let searchResults = this._snippetsToSearchResults(snippets, nResults);
+        let searchResults = this._snippetsToSearchResults(snippets, nResults, query, answerText || '');
         if (searchResults.length === 0 && answerText) {
           searchResults = [
             {

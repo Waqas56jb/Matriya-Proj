@@ -91,7 +91,7 @@ export async function runLoop(sessionId, query, ragService, filterMetadata = nul
   try {
     if (ragService.generateAnswer) {
       const res = await ragService.generateAnswer(query, nResults, filterMetadata || null, false);
-      ragEvidenceSources = evidenceFromSearchResults(res.results || []);
+      ragEvidenceSources = evidenceFromSearchResults(res.results || [], undefined, undefined, query, null);
       let text = (res.context || res.results?.map(r => r.document || r.content).join('\n') || '').slice(0, maxContextChars);
       const hadFileFilter = filterMetadata && (
         (Array.isArray(filterMetadata.filenames) && filterMetadata.filenames.length > 0) ||
