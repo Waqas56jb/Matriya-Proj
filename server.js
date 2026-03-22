@@ -31,6 +31,7 @@ import { getMetricsDashboard, getSEMOutput, getGateRecords } from './observabili
 import { getModelVersionHash } from './researchGate.js';
 import {
   getMatriyaOpenAiVectorStoreId,
+  hydrateMatriyaOpenAiVectorStoreId,
   persistMatriyaOpenAiVectorStoreId,
   useOpenAiFileSearchEnabled,
   getOpenAiApiBase
@@ -178,7 +179,10 @@ async function logDecisionAudit(sessionId, stage, decision, responseType, reques
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dest = process.env.VERCEL ? '/tmp' : settings.UPLOAD_DIR;
+    const dest = settings.UPLOAD_DIR;
+    try {
+      mkdirSync(dest, { recursive: true });
+    } catch (_) {}
     cb(null, dest);
   },
   filename: (req, file, cb) => {
@@ -544,6 +548,8 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
   if (!openaiKey) {
     return res.status(503).json({ error: "OpenAI API key not configured. Set OPENAI_API_KEY in .env." });
   }
+
+  await hydrateMatriyaOpenAiVectorStoreId();
 
   const useOpenAiFs =
     useOpenAiFileSearchEnabled() &&
@@ -1236,6 +1242,7 @@ app.get("/gpt-rag/status", async (req, res) => {
       use_openai_file_search: useOpenAiFileSearchEnabled()
     });
   }
+  await hydrateMatriyaOpenAiVectorStoreId();
   const enabled = useOpenAiFileSearchEnabled();
   const vsId = getMatriyaOpenAiVectorStoreId();
   if (!enabled) {
@@ -1291,6 +1298,7 @@ app.post("/gpt-rag/sync", async (req, res) => {
   if (!key) {
     return res.status(503).json({ error: 'OPENAI_API_KEY not set' });
   }
+  await hydrateMatriyaOpenAiVectorStoreId();
   let rag;
   try {
     rag = getRagService();
@@ -1311,13 +1319,15 @@ app.post("/gpt-rag/sync", async (req, res) => {
         batch_id: result.batch_id
       });
     }
-    persistMatriyaOpenAiVectorStoreId(result.vector_store_id);
+    await persistMatriyaOpenAiVectorStoreId(result.vector_store_id);
     return res.json({
       ok: true,
       vector_store_id: result.vector_store_id,
       uploaded: result.uploaded,
       skipped: result.skipped,
-      batch_status: result.batch_status
+      batch_status: result.batch_status,
+      indexing_pending: Boolean(result.indexing_pending),
+      batch_id: result.batch_id || undefined
     });
   } catch (e) {
     logger.error(`gpt-rag/sync: ${e.message}`);

@@ -20,8 +20,9 @@ class Settings {
     // Embedding Model (local)
     this.EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "sentence-transformers/all-MiniLM-L6-v2";
     
-    // Document Processing
-    this.UPLOAD_DIR = process.env.UPLOAD_DIR || "./uploads";
+    // Document Processing (Vercel: writable dir only under /tmp; aligns with vector-store id file)
+    this.UPLOAD_DIR =
+      process.env.UPLOAD_DIR || (process.env.VERCEL ? '/tmp/matriya-uploads' : './uploads');
     this.MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024; // 50MB
     this.ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".doc", ".xlsx", ".xls"];
     

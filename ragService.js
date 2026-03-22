@@ -9,7 +9,11 @@ import LLMService from './llmService.js';
 import logger from './logger.js';
 import { readdirSync, statSync } from 'fs';
 import { join, extname } from 'path';
-import { getMatriyaOpenAiVectorStoreId, useOpenAiFileSearchEnabled } from './lib/openaiMatriyaConfig.js';
+import {
+  getMatriyaOpenAiVectorStoreId,
+  hydrateMatriyaOpenAiVectorStoreId,
+  useOpenAiFileSearchEnabled
+} from './lib/openaiMatriyaConfig.js';
 import { openAiFileSearchAnswerAndSnippets } from './lib/openaiFileSearchMatriya.js';
 
 class RAGService {
@@ -243,6 +247,7 @@ class RAGService {
      * Returns:
      *   List of search results, sorted by relevance
      */
+    await hydrateMatriyaOpenAiVectorStoreId();
     if (this._openAiFileSearchReady()) {
       try {
         const catalogFilenames = await this._catalogFilenamesForOpenAi();
@@ -364,6 +369,7 @@ class RAGService {
      * Returns:
      *   Dictionary with search results and generated answer
      */
+    await hydrateMatriyaOpenAiVectorStoreId();
     if (this._openAiFileSearchReady()) {
       try {
         const catalogFilenames = await this._catalogFilenamesForOpenAi();

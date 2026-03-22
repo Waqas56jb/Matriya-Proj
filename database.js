@@ -689,6 +689,19 @@ const Experiment = sequelize ? sequelize.define('Experiment', {
   ]
 }) : null;
 
+/** Single-row KV for serverless-safe config (e.g. OpenAI vector store id survives cold starts). */
+const MatriyaAppKv = sequelize
+  ? sequelize.define(
+      'MatriyaAppKv',
+      {
+        key: { type: DataTypes.STRING(128), primaryKey: true },
+        value: { type: DataTypes.TEXT, allowNull: false },
+        updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+      },
+      { tableName: 'matriya_app_kv', timestamps: false }
+    )
+  : null;
+
 // Initialize database
 async function initDb() {
   if (!sequelize) {
@@ -742,6 +755,7 @@ function getDb() {
 export {
   User,
   FilePermission,
+  MatriyaAppKv,
   SearchHistory,
   ResearchSession,
   ResearchAuditLog,
