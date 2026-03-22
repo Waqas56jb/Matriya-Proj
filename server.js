@@ -507,15 +507,6 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
   } catch (_) {
     history = [];
   }
-  let fileContext = '';
-  /** Excerpts actually passed to the model (for UI “מקורות” on Upload / Ask). */
-  const fileEvidenceSources = [];
-  const pushFileEvidence = (filename, rawText) => {
-    const raw = String(rawText || '').trim();
-    if (!raw) return;
-    const excerpt = raw.length > 4000 ? `${raw.slice(0, 4000)}…` : raw;
-    fileEvidenceSources.push({ filename: String(filename || '—'), excerpt });
-  };
   const files = req.files || [];
   const filenames = (() => {
     const f = req.body?.filenames;
@@ -526,13 +517,58 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
   const MAX_FILE_CONTEXT_CHARS = 80000;
   const MAX_HISTORY_MESSAGES = 20;
 
+  const openaiKey = settings.OPENAI_API_KEY;
+  if (!openaiKey) {
+    return res.status(503).json({ error: "OpenAI API key not configured. Set OPENAI_API_KEY in .env." });
+  }
+
+  await hydrateMatriyaOpenAiVectorStoreId();
+
+  const buildAskInput = () => {
+    const MAX_MESSAGE_CONTENT_CHARS = 4000;
+    const trimmedHistory = (Array.isArray(history) ? history.slice(-MAX_HISTORY_MESSAGES) : []).map(m => ({
+      ...m,
+      content: typeof m.content === 'string' ? m.content.slice(0, MAX_MESSAGE_CONTENT_CHARS) : m.content
+    }));
+    const historyLines = trimmedHistory
+      .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : ''}`)
+      .join('\n');
+    return historyLines ? `${historyLines}\nuser: ${message}` : message;
+  };
+
+  // Prefer vector file_search whenever cloud RAG is on: evidence = retrieved snippets only (not whole files).
+  const canTryCloudFileSearch =
+    files.length === 0 && useOpenAiFileSearchEnabled() && Boolean(getMatriyaOpenAiVectorStoreId());
+
+  if (canTryCloudFileSearch) {
+    try {
+      let catalogAppendix = '';
+      try {
+        catalogAppendix = buildMatriyaCatalogAppendix(await getRagService().getAllFilenames());
+      } catch (_) {}
+      const filterMetadata = filenames.length > 0 ? { filenames } : null;
+      const data = await openAiResponsesFileSearch({
+        query: buildAskInput(),
+        instructions: MATRIYA_FILE_SEARCH_INSTRUCTIONS_ANSWER,
+        maxNumResults: 24,
+        filterMetadata,
+        catalogAppendix
+      });
+      const reply = extractOpenAiResponsesOutputText(data);
+      const sources = normalizeEvidenceSources(collectFileSearchSnippetsFromResponse(data));
+      return res.json({ reply: reply || '', sources });
+    } catch (e) {
+      logger.warn(`Ask Matriya file_search failed, falling back to injected document text: ${e.message}`);
+    }
+  }
+
+  let fileContext = '';
   if (filenames.length > 0) {
     const rag = getRagService();
     for (const fn of filenames) {
       if (fileContext.length >= MAX_FILE_CONTEXT_CHARS) break;
       const text = await rag.getFullTextForFile(fn);
       if (text) {
-        pushFileEvidence(fn, text);
         const chunk = `\n--- ${fn} ---\n${text}\n`;
         fileContext += fileContext.length + chunk.length <= MAX_FILE_CONTEXT_CHARS ? chunk : chunk.slice(0, MAX_FILE_CONTEXT_CHARS - fileContext.length);
       }
@@ -544,7 +580,6 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
         tempPaths.push(f.path);
         const result = await docProcessor.processFile(f.path);
         if (result.success && result.text && fileContext.length < MAX_FILE_CONTEXT_CHARS) {
-          pushFileEvidence(result.metadata?.filename || f.originalname, result.text);
           const chunk = `\n--- ${result.metadata?.filename || f.originalname} ---\n${result.text}\n`;
           fileContext += fileContext.length + chunk.length <= MAX_FILE_CONTEXT_CHARS ? chunk : chunk.slice(0, MAX_FILE_CONTEXT_CHARS - fileContext.length);
         }
@@ -555,48 +590,6 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
           if (existsSync(p)) unlinkSync(p);
         } catch (_) {}
       }
-    }
-  }
-  const openaiKey = settings.OPENAI_API_KEY;
-  if (!openaiKey) {
-    return res.status(503).json({ error: "OpenAI API key not configured. Set OPENAI_API_KEY in .env." });
-  }
-
-  await hydrateMatriyaOpenAiVectorStoreId();
-
-  const useOpenAiFs =
-    useOpenAiFileSearchEnabled() &&
-    getMatriyaOpenAiVectorStoreId() &&
-    filenames.length === 0 &&
-    files.length === 0;
-
-  if (useOpenAiFs) {
-    const MAX_MESSAGE_CONTENT_CHARS = 4000;
-    const trimmedHistory = (Array.isArray(history) ? history.slice(-MAX_HISTORY_MESSAGES) : []).map(m => ({
-      ...m,
-      content: typeof m.content === 'string' ? m.content.slice(0, MAX_MESSAGE_CONTENT_CHARS) : m.content
-    }));
-    const historyLines = trimmedHistory
-      .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : ''}`)
-      .join('\n');
-    const input = historyLines ? `${historyLines}\nuser: ${message}` : message;
-    try {
-      let catalogAppendix = '';
-      try {
-        catalogAppendix = buildMatriyaCatalogAppendix(await getRagService().getAllFilenames());
-      } catch (_) {}
-      const data = await openAiResponsesFileSearch({
-        query: input,
-        instructions: MATRIYA_FILE_SEARCH_INSTRUCTIONS_ANSWER,
-        maxNumResults: 24,
-        filterMetadata: null,
-        catalogAppendix
-      });
-      const reply = extractOpenAiResponsesOutputText(data);
-      const sources = normalizeEvidenceSources(collectFileSearchSnippetsFromResponse(data));
-      return res.json({ reply: reply || '', sources });
-    } catch (e) {
-      logger.warn(`Ask Matriya file_search failed, falling back to chat/completions: ${e.message}`);
     }
   }
 
@@ -631,10 +624,8 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
       }
     );
     const reply = response.data?.choices?.[0]?.message?.content?.trim() || "";
-    const sources = normalizeEvidenceSources(
-      fileEvidenceSources.map((s) => ({ filename: s.filename, text: s.excerpt }))
-    );
-    return res.json({ reply, sources });
+    // No chunk-level attribution when the model only sees pasted full documents — avoid listing every file as “evidence”.
+    return res.json({ reply, sources: [] });
   } catch (e) {
     const status = e.response?.status;
     const msg = e.response?.data?.error?.message || e.message || "OpenAI request failed";
