@@ -375,4 +375,117 @@ export function stripSuggestions(text) {
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/**
+ * Thresholds for deterministic pre-LLM evidence gate (tune via env / real queries).
+ */
+export function getPreLlmGateThresholds() {
+  const minSimilarity = parseFloat(process.env.MATRIYA_PRE_LLM_MIN_SIMILARITY || '0.75');
+  const minStrongChunks = Math.max(1, parseInt(process.env.MATRIYA_PRE_LLM_MIN_CHUNKS || '2', 10));
+  return {
+    minSimilarity: Number.isFinite(minSimilarity) ? minSimilarity : 0.75,
+    minStrongChunks
+  };
+}
+
+const MIN_DOC_CHARS_EVIDENCE = 12;
+
+/**
+ * Unified retrieval strength for pre-LLM gate: OpenAI rank scores vs vector cosine (stored in `distance`).
+ */
+export function retrievalSimilarityForGate(hit) {
+  if (!hit || typeof hit !== 'object') return 0;
+  const doc = String(hit.document ?? hit.text ?? '').trim();
+  if (doc.length < MIN_DOC_CHARS_EVIDENCE) return 0;
+
+  const d = hit.distance;
+  const rs = hit.relevance_score;
+
+  if (hit.evidence_metric === 'openai_rank' && typeof rs === 'number' && !Number.isNaN(rs)) {
+    return Math.min(1, Math.max(0, rs));
+  }
+  if (hit.evidence_metric === 'cosine' && typeof d === 'number' && !Number.isNaN(d)) {
+    return Math.min(1, Math.max(0, d));
+  }
+
+  if (typeof d === 'number' && typeof rs === 'number' && d > 0 && d < 0.5 && rs >= 0.5) {
+    return Math.min(1, Math.max(0, rs));
+  }
+
+  if (typeof d === 'number' && !Number.isNaN(d) && d >= 0 && d <= 1.0001) {
+    if (typeof rs === 'number' && rs > 1.01) {
+      return Math.min(1, Math.max(0, d));
+    }
+    return Math.min(1, Math.max(0, d));
+  }
+
+  if (typeof rs === 'number' && !Number.isNaN(rs)) {
+    return Math.min(1, Math.max(0, Math.min(rs, 1)));
+  }
+  return 0;
+}
+
+/**
+ * Steps 1–2 only: no / weak evidence (no DB).
+ */
+export function evaluatePreLlmEvidenceGate(searchResults) {
+  const cfg = getPreLlmGateThresholds();
+  const chunks = Array.isArray(searchResults) ? searchResults : [];
+  if (chunks.length === 0) {
+    return { ok: false, httpStatus: 422, code: 'INSUFFICIENT_EVIDENCE' };
+  }
+  const substantive = chunks.filter((c) => String(c.document ?? c.text ?? '').trim().length >= MIN_DOC_CHARS_EVIDENCE);
+  if (substantive.length === 0) {
+    return { ok: false, httpStatus: 422, code: 'INSUFFICIENT_EVIDENCE' };
+  }
+  const strong = substantive.filter((c) => retrievalSimilarityForGate(c) > cfg.minSimilarity);
+  if (strong.length < cfg.minStrongChunks) {
+    return { ok: false, httpStatus: 422, code: 'LOW_CONFIDENCE_EVIDENCE' };
+  }
+  return { ok: true };
+}
+
+/** Research FSM only (no DB). Exported for tests / scripts. */
+export function evaluatePreLlmFsmGateOnly({ stage, completedStages }) {
+  if (!isStageAllowed(completedStages, stage)) {
+    return {
+      ok: false,
+      httpStatus: 409,
+      code: 'INVALID_STATE_TRANSITION',
+      message: 'Invalid research stage transition (FSM).'
+    };
+  }
+  return { ok: true };
+}
+
+/** Map active DB violation row to gate denial (no DB). Exported for tests / scripts. */
+export function evaluatePreLlmIntegrityGate(activeViolation) {
+  if (!activeViolation) return { ok: true };
+  return {
+    ok: false,
+    httpStatus: 422,
+    code: 'INTEGRITY_VIOLATION',
+    message: 'Session blocked by active B-Integrity violation.',
+    violation_id: activeViolation.id
+  };
+}
+
+/**
+ * Deterministic pre-LLM gate: evidence → research FSM stage → integrity (defense in depth).
+ * Order matches product spec: insufficient → low confidence → invalid stage → violation.
+ * FSM is checked before querying violations (no extra DB round-trip on bad stage).
+ */
+export async function evaluatePreLlmResearchGate({ sessionId, stage, completedStages, searchResults }) {
+  const ev = evaluatePreLlmEvidenceGate(searchResults);
+  if (!ev.ok) return ev;
+
+  const fsm = evaluatePreLlmFsmGateOnly({ stage, completedStages });
+  if (!fsm.ok) return fsm;
+
+  const violation = await getActiveViolation(sessionId);
+  const integ = evaluatePreLlmIntegrityGate(violation);
+  if (!integ.ok) return integ;
+
+  return { ok: true };
+}
+
 export { RESPONSE_TYPE, STAGES_ORDER, VALID_STAGES, getNextAllowedStage, isStageAllowed };

@@ -14,7 +14,8 @@
     "check:task7": "node scripts/check-doe-integration.js",
     "check:task8": "node scripts/check-risk-oracle.js",
     "check:task2": "node scripts/check-integrity-rules-engine.js",
-    "check:dashboard": "node scripts/check-dashboard-improvements.js"
+    "check:dashboard": "node scripts/check-dashboard-improvements.js",
+    "check:pre-llm-gate": "node scripts/check-pre-llm-gate.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

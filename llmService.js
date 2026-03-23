@@ -45,7 +45,9 @@ class LLMService {
     }
     
     // Format prompt for instruction-tuned models – require Hebrew to avoid Arabic drift
-    const systemPrompt = "Based on the given context, answer the question clearly and concisely. You must respond in Hebrew (עברית) only. Do not use Arabic.";
+    const systemPrompt =
+      "Based on the given context, answer the question clearly and concisely. You must respond in Hebrew (עברית) only. Do not use Arabic. " +
+      "If the context does not contain enough information to answer, respond with this single Hebrew sentence only — no bullet lists, no recommendations, no next steps: אין במערכת מידע תומך לשאלה זו.";
     const userContent = `Context:\n${context}\n\nQuestion: ${question}`;
     
     try {

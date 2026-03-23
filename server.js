@@ -4,6 +4,7 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
+import { Op } from 'sequelize';
 import { fileURLToPath } from 'url';
 import path, { dirname, join } from 'path';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
@@ -21,14 +22,15 @@ import {
   getOrCreateSession,
   getGateObservabilityContext,
   HARD_STOP_MESSAGE,
-  stripSuggestions
+  stripSuggestions,
+  evaluatePreLlmResearchGate,
+  getModelVersionHash
 } from './researchGate.js';
 import { runAfterCycle, getActiveViolation } from './integrityMonitor.js';
 import { runLoop } from './researchLoop.js';
 import logger from './logger.js';
 import { metricsMiddleware, getMetrics } from './metrics.js';
 import { getMetricsDashboard, getSEMOutput, getGateRecords } from './observability.js';
-import { getModelVersionHash } from './researchGate.js';
 import {
   buildStructuredKernelOutput,
   parseKernelJsonParam,
@@ -54,6 +56,11 @@ import {
   evidenceFromSearchResults
 } from './lib/openaiFileSearchMatriya.js';
 import { repairUtf8MisdecodedAsLatin1 } from './lib/textEncoding.js';
+import {
+  hasFileSearchEvidence,
+  sanitizeAnswerWhenNoSupportClaimed,
+  RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE
+} from './lib/ragEvidenceFailSafe.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -338,6 +345,117 @@ app.post("/analysis/formula", async (req, res) => {
   }
 });
 
+const INSIGHTS_DOC_PREVIEW_LEN = 600;
+const INSIGHTS_RAG_N = 10;
+const INSIGHTS_FORMULATION_LIMIT = 20;
+
+function buildExperimentRagQuery(exp) {
+  if (!exp || typeof exp !== 'object') return '';
+  const parts = [];
+  if (exp.technology_domain && String(exp.technology_domain).trim()) parts.push(String(exp.technology_domain).trim());
+  if (exp.formula != null && String(exp.formula).trim()) parts.push(String(exp.formula).trim().slice(0, 800));
+  const mats = exp.materials;
+  if (Array.isArray(mats)) {
+    for (const m of mats.slice(0, 24)) {
+      if (typeof m === 'string' && m.trim()) parts.push(m.trim());
+      else if (m && typeof m === 'object' && m.name) parts.push(String(m.name).trim());
+    }
+  } else if (mats && typeof mats === 'object') {
+    parts.push(...Object.keys(mats).slice(0, 24));
+  }
+  const q = parts.filter(Boolean).join(' ').trim();
+  return q.slice(0, 2000) || 'experiment';
+}
+
+function mapSearchHitToSimilarDoc(hit) {
+  const text = (hit && (hit.document || hit.text || '')) || '';
+  const meta = (hit && hit.metadata) || {};
+  return {
+    filename: meta.filename || meta.source || 'Unknown',
+    text_preview: text.slice(0, INSIGHTS_DOC_PREVIEW_LEN),
+    distance: typeof hit.distance === 'number' ? hit.distance : null,
+    metadata: {
+      chunk_index: meta.chunk_index,
+      filename: meta.filename
+    }
+  };
+}
+
+/**
+ * GET /insights/experiment/:experimentId
+ * Data-only for management / lab integration: similar RAG chunks + similar synced formulations.
+ * No recommendations and no "next experiment". Requires auth.
+ */
+app.get('/insights/experiment/:experimentId', requireAuth, async (req, res) => {
+  const experimentId = req.params.experimentId != null ? String(req.params.experimentId) : '';
+  if (!experimentId) {
+    return res.status(400).json({ error: 'experimentId is required' });
+  }
+  try {
+    if (!Experiment) {
+      return res.status(503).json({
+        error: 'Experiments storage not available',
+        experiment_id: experimentId,
+        matriya_experiment_found: false,
+        similar_documents: [],
+        similar_formulations: []
+      });
+    }
+    const row = await Experiment.findOne({ where: { experiment_id: experimentId } });
+    const matriya_experiment_found = !!row;
+    const ragQuery = row ? buildExperimentRagQuery(row.toJSON ? row.toJSON() : row) : '';
+
+    let similar_documents = [];
+    if (ragQuery) {
+      try {
+        const hits = await getRagService().search(ragQuery, INSIGHTS_RAG_N, null);
+        similar_documents = (Array.isArray(hits) ? hits : []).map(mapSearchHitToSimilarDoc);
+      } catch (e) {
+        logger.warn(`insights RAG search failed: ${e.message}`);
+      }
+    }
+
+    let similar_formulations = [];
+    if (row) {
+      const domain = row.technology_domain && String(row.technology_domain).trim();
+      const where = {
+        experiment_id: { [Op.ne]: experimentId },
+        ...(domain ? { technology_domain: domain } : {})
+      };
+      const others = await Experiment.findAll({
+        where,
+        order: [['updated_at', 'DESC']],
+        limit: INSIGHTS_FORMULATION_LIMIT + 5,
+        attributes: [
+          'experiment_id',
+          'technology_domain',
+          'formula',
+          'experiment_outcome',
+          'is_production_formula'
+        ]
+      });
+      similar_formulations = others.slice(0, INSIGHTS_FORMULATION_LIMIT).map((r) => ({
+        experiment_id: r.experiment_id,
+        technology_domain: r.technology_domain,
+        formula: r.formula,
+        experiment_outcome: r.experiment_outcome,
+        is_production_formula: !!r.is_production_formula
+      }));
+    }
+
+    return res.json({
+      experiment_id: experimentId,
+      matriya_experiment_found,
+      rag_query_used: ragQuery || null,
+      similar_documents,
+      similar_formulations
+    });
+  } catch (e) {
+    logger.error(`/insights/experiment error: ${e.message}`);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 /**
  * POST /sync/experiments – lab system sends snapshot of experiments for MATRIYA to learn from.
  * Body: { experiments: [ { experiment_id, technology_domain, formula, materials, percentages, results, experiment_outcome, is_production_formula? }, ... ] }
@@ -589,15 +707,21 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
         filterMetadata,
         catalogAppendix
       });
-      const reply = extractOpenAiResponsesOutputText(data);
+      const snippetsRaw = collectFileSearchSnippetsFromResponse(data);
+      let reply = extractOpenAiResponsesOutputText(data);
+      if (!hasFileSearchEvidence(snippetsRaw)) {
+        reply = RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
+      } else {
+        reply = sanitizeAnswerWhenNoSupportClaimed(reply || '') || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
+      }
       const sources = normalizeEvidenceSources(
-        collectFileSearchSnippetsFromResponse(data),
+        snippetsRaw,
         undefined,
         undefined,
         message,
         reply
       );
-      return res.json({ reply: reply || '', sources });
+      return res.json({ reply: reply || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE, sources });
     } catch (e) {
       logger.warn(`Ask Matriya file_search failed, falling back to injected document text: ${e.message}`);
     }
@@ -634,8 +758,12 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
     }
   }
 
+  if ((filenames.length > 0 || files.length > 0) && !String(fileContext || '').trim()) {
+    return res.json({ reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE, sources: [] });
+  }
+
   const systemContent = fileContext
-    ? `The user has attached the following document content. Answer questions based on it. You must respond in Hebrew (עברית) only. Do not use Arabic.\n\nDocuments:\n${fileContext}`
+    ? `The user has attached the following document content. Answer questions based on it. You must respond in Hebrew (עברית) only. Do not use Arabic.\n\nIf the documents do not contain enough information to answer, reply with this single sentence only — no bullet lists, no recommendations, no next steps: אין במערכת מידע תומך לשאלה זו.\n\nDocuments:\n${fileContext}`
     : "You are a helpful research assistant. You must respond in Hebrew (עברית) only. Do not use Arabic.";
   const MAX_MESSAGE_CONTENT_CHARS = 4000;
   const trimmedHistory = (Array.isArray(history) ? history.slice(-MAX_HISTORY_MESSAGES) : []).map(m => ({
@@ -664,7 +792,10 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
         timeout: 60000
       }
     );
-    const reply = response.data?.choices?.[0]?.message?.content?.trim() || "";
+    let reply = response.data?.choices?.[0]?.message?.content?.trim() || "";
+    if (fileContext.trim()) {
+      reply = sanitizeAnswerWhenNoSupportClaimed(reply) || reply;
+    }
     // No chunk-level attribution when the model only sees pasted full documents — avoid listing every file as “evidence”.
     return res.json({ reply, sources: [] });
   } catch (e) {
@@ -813,19 +944,55 @@ async function handleMatriyaSearch(req, res) {
       }
 
       // K/C: info only (no solutions) – we'll post-process answer. N/L: full answer
+      const rag = getRagService();
+      const nPre = rag.getDocAgentRetrievalCount(filterMetadata);
+      let preSearchResults;
+      try {
+        preSearchResults = await rag.search(query, nPre, filterMetadata);
+      } catch (e) {
+        logger.error(`Pre-LLM gate search error: ${e.message}`);
+        return res.status(500).json({ error: 'Search error', pre_llm_gate: true });
+      }
+      const preGate = await evaluatePreLlmResearchGate({
+        sessionId: responseSessionId,
+        stage,
+        completedStages: gate.session.completed_stages || [],
+        searchResults: preSearchResults
+      });
+      if (!preGate.ok) {
+        await logDecisionAudit(
+          responseSessionId,
+          stage,
+          'deny_pre_llm',
+          null,
+          query,
+          {
+            session_id: responseSessionId,
+            stage,
+            gate_code: preGate.code,
+            ...(preGate.violation_id && { violation_id: preGate.violation_id })
+          },
+          null,
+          { complexity_context: complexityContext }
+        );
+        return res.status(preGate.httpStatus).json({
+          error: preGate.code,
+          message: preGate.message || preGate.code,
+          pre_llm_gate: true,
+          ...(preGate.violation_id && { violation_id: preGate.violation_id })
+        });
+      }
+
       const kernel = getKernel();
-      const kernelResult = await kernel.processUserIntent(
-        query,
-        null,
-        null,
-        filterMetadata
-      );
+      const kernelResult = await kernel.processUserIntent(query, null, null, filterMetadata, {
+        prefetchedSearchResults: preSearchResults
+      });
 
       if (kernelResult.decision === 'block' || kernelResult.decision === 'stop') {
         const noAnswerFromRag = (kernelResult.reason || '').includes('לא נמצאה תשובה') || (kernelResult.reason || '').includes('No answer');
         if (noAnswerFromRag) {
           await logAudit(responseSessionId, stage, 'no_results', query);
-          const noAns = 'לא נמצא מידע רלוונטי במסמכים.';
+          const noAns = RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
           const src = evidenceFromSearchResults(
             kernelResult.search_results || [],
             undefined,

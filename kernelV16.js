@@ -177,7 +177,7 @@ export function buildStructuredKernelOutput({
     return {
       Evidence: 'אין בסיס מספק לעוגן ניתוח.',
       Pattern: '—',
-      Conclusion: 'insufficient information',
+      Conclusion: 'אין במערכת מידע תומך לשאלה זו.',
       Confidence: 0
     };
   }

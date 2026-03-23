@@ -18,6 +18,7 @@ import {
   openAiFileSearchAnswerAndSnippets,
   selectRankedSnippetList
 } from './lib/openaiFileSearchMatriya.js';
+import { hasFileSearchEvidence, hasVectorSearchEvidence } from './lib/ragEvidenceFailSafe.js';
 
 class RAGService {
   /**Main service for RAG operations*/
@@ -55,10 +56,22 @@ class RAGService {
         document: docText,
         metadata: { filename },
         distance: 0.15 + i * 0.01,
-        relevance_score: 1 - i * 0.05
+        relevance_score: 1 - i * 0.05,
+        evidence_metric: 'openai_rank'
       });
     }
     return out;
+  }
+
+  /** Match Doc Agent retrieval depth (Kernel / pre-LLM gate). */
+  getDocAgentRetrievalCount(filterMetadata = null) {
+    const singleFile =
+      filterMetadata && typeof filterMetadata.filename === 'string' && filterMetadata.filename.trim();
+    let nDoc = singleFile ? 8 : 12;
+    if (!singleFile && this._openAiFileSearchReady()) {
+      nDoc = 24;
+    }
+    return nDoc;
   }
 
   constructor() {
@@ -258,17 +271,10 @@ class RAGService {
           forContextOnly: true,
           catalogFilenames
         });
-        let mapped = this._snippetsToSearchResults(snippets, nResults, query, '');
-        if (mapped.length === 0 && answerText) {
-          mapped = [
-            {
-              document: answerText,
-              metadata: { filename: 'חיפוש במסמכים (מאגר מסונכרן)' },
-              distance: 0.1,
-              relevance_score: 1
-            }
-          ];
+        if (!hasFileSearchEvidence(snippets)) {
+          return [];
         }
+        const mapped = this._snippetsToSearchResults(snippets, nResults, query, '');
         if (mapped.length > 0) return mapped;
       } catch (e) {
         logger.warn(`OpenAI file search (search) failed, using vector RAG: ${e.message}`);
@@ -348,7 +354,8 @@ class RAGService {
       
       scoredResults.push({
         ...result,
-        relevance_score: score
+        relevance_score: score,
+        evidence_metric: 'cosine'
       });
     }
     
@@ -359,7 +366,7 @@ class RAGService {
     return scoredResults.slice(0, nResults);
   }
   
-  async generateAnswer(query, nResults = 5, filterMetadata = null, useLlm = true) {
+  async generateAnswer(query, nResults = 5, filterMetadata = null, useLlm = true, prefetchedSearchResults = null) {
     /**
      * Search for relevant documents and generate an answer using LLM
      * 
@@ -373,40 +380,44 @@ class RAGService {
      *   Dictionary with search results and generated answer
      */
     await hydrateMatriyaOpenAiVectorStoreId();
-    if (this._openAiFileSearchReady()) {
+
+    let searchResults = Array.isArray(prefetchedSearchResults) ? prefetchedSearchResults : null;
+
+    if (searchResults == null && this._openAiFileSearchReady()) {
       try {
         const catalogFilenames = await this._catalogFilenamesForOpenAi();
         const { answerText, snippets } = await openAiFileSearchAnswerAndSnippets(query, filterMetadata, {
           forContextOnly: !useLlm,
           catalogFilenames
         });
-        let searchResults = this._snippetsToSearchResults(snippets, nResults, query, answerText || '');
-        if (searchResults.length === 0 && answerText) {
-          searchResults = [
-            {
-              document: answerText,
-              metadata: { filename: 'חיפוש במסמכים (מאגר מסונכרן)' },
-              distance: 0.1,
-              relevance_score: 1
-            }
-          ];
+        if (!hasFileSearchEvidence(snippets)) {
+          return {
+            query,
+            results: [],
+            results_count: 0,
+            answer: null,
+            context_used: 0,
+            context: '',
+            error: 'No relevant documents found'
+          };
         }
+        const mapped = this._snippetsToSearchResults(snippets, nResults, query, answerText || '');
         const contextParts = [];
-        for (let i = 0; i < Math.min(searchResults.length, nResults); i++) {
-          const result = searchResults[i];
+        for (let i = 0; i < Math.min(mapped.length, nResults); i++) {
+          const result = mapped[i];
           const docText = result.document || '';
           const filename = result.metadata?.filename || 'Unknown';
           contextParts.push(`[Source ${i + 1} from ${filename}]:\n${docText}\n`);
         }
-        const context = contextParts.length ? contextParts.join('\n') : answerText || '';
+        const context = contextParts.length ? contextParts.join('\n') : '';
         const answer = useLlm ? answerText || null : null;
-        if (!searchResults.length && !answer && !context) {
+        if (!mapped.length && !answer && !context) {
           throw new Error('No cloud document search results');
         }
         return {
           query,
-          results: searchResults,
-          results_count: searchResults.length,
+          results: mapped,
+          results_count: mapped.length,
           answer,
           context_used: contextParts.length || (context ? 1 : 0),
           context,
@@ -417,9 +428,10 @@ class RAGService {
       }
     }
 
-    let searchResults;
     try {
-      searchResults = await this.search(query, nResults, filterMetadata);
+      if (searchResults == null) {
+        searchResults = await this.search(query, nResults, filterMetadata);
+      }
     } catch (e) {
       logger.error(`Error during search: ${e.message}`);
       return {
@@ -432,7 +444,7 @@ class RAGService {
       };
     }
     
-    if (!searchResults || searchResults.length === 0) {
+    if (!searchResults || searchResults.length === 0 || !hasVectorSearchEvidence(searchResults)) {
       return {
         query: query,
         results: [],

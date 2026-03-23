@@ -3,6 +3,7 @@
  * States: K (Known), C (Checked), B (Blocked), N (New), L (Limited)
  */
 import logger from './logger.js';
+import { sanitizeAnswerWhenNoSupportClaimed, hasVectorSearchEvidence } from './lib/ragEvidenceFailSafe.js';
 
 const State = {
   K: "K",  // Known - Verified and approved
@@ -91,7 +92,7 @@ class Kernel {
     this.stateMachine = stateMachine;
   }
   
-  async processUserIntent(query, userId = null, context = null, filterMetadata = null) {
+  async processUserIntent(query, userId = null, context = null, filterMetadata = null, options = null) {
     /**
      * Process user intent through the Kernel system
      * 
@@ -126,15 +127,10 @@ class Kernel {
         }
       } else {
         // Get answer from RAG (Doc Agent) — deeper retrieval when cloud doc search is on / all documents
-        const singleFile =
-          filterMetadata &&
-          typeof filterMetadata.filename === 'string' &&
-          filterMetadata.filename.trim();
-        let nDoc = singleFile ? 8 : 12;
-        if (!singleFile && this.ragService._openAiFileSearchReady && this.ragService._openAiFileSearchReady()) {
-          nDoc = 24;
-        }
-        const docResult = await this.ragService.generateAnswer(query, nDoc, filterMetadata, true);
+        const nDoc = this.ragService.getDocAgentRetrievalCount(filterMetadata);
+        const prefetched =
+          options && Array.isArray(options.prefetchedSearchResults) ? options.prefetchedSearchResults : null;
+        const docResult = await this.ragService.generateAnswer(query, nDoc, filterMetadata, true, prefetched);
         docAnswer = docResult.answer;
         docContext = docResult.context || '';
         docSearchResults = docResult.results || [];
@@ -154,6 +150,23 @@ class Kernel {
           }
         };
       }
+
+      if (!context) {
+        if (!hasVectorSearchEvidence(docSearchResults, 12)) {
+          this.stateMachine.logStateChange(queryId, State.B, KernelDecision.STOP, 'No substantive RAG evidence');
+          return {
+            decision: KernelDecision.STOP,
+            state: State.B,
+            answer: null,
+            reason: 'לא נמצאה תשובה במסמכים',
+            agent_results: {
+              doc_agent: { status: 'no_answer', reason: 'no_substantive_evidence' }
+            }
+          };
+        }
+      }
+
+      docAnswer = sanitizeAnswerWhenNoSupportClaimed(docAnswer);
     } catch (e) {
       logger.error(`Doc Agent error: ${e.message}`);
       this.stateMachine.logStateChange(queryId, State.B, KernelDecision.STOP, `Doc Agent error: ${e.message}`);
