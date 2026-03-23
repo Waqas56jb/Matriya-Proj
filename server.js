@@ -30,6 +30,12 @@ import { metricsMiddleware, getMetrics } from './metrics.js';
 import { getMetricsDashboard, getSEMOutput, getGateRecords } from './observability.js';
 import { getModelVersionHash } from './researchGate.js';
 import {
+  buildStructuredKernelOutput,
+  parseKernelJsonParam,
+  suggestStructuralGeneration,
+  KERNEL_V16_VERSION
+} from './kernelV16.js';
+import {
   getMatriyaOpenAiVectorStoreId,
   hydrateMatriyaOpenAiVectorStoreId,
   persistMatriyaOpenAiVectorStoreId,
@@ -125,6 +131,35 @@ function getKernel() {
     logger.info("Kernel initialized");
   }
   return kernel;
+}
+
+function researchKernelOptsFromRequest(req) {
+  const q = req.query || {};
+  const b = req.body || {};
+  const raw = { ...q, ...b };
+  return {
+    kernel_signals: parseKernelJsonParam(raw.kernel_signals),
+    data_anchors: parseKernelJsonParam(raw.data_anchors),
+    methodology_flags: parseKernelJsonParam(raw.methodology_flags)
+  };
+}
+
+function attachKernelV16ToPayload(resPayload, { stage, answer, sources, session, gateKernelV16, insufficientInfo }) {
+  const kc = session?.kernel_context || {};
+  const base = {
+    spec: KERNEL_V16_VERSION,
+    ...(gateKernelV16 && typeof gateKernelV16 === 'object' ? gateKernelV16 : {}),
+    structured: buildStructuredKernelOutput({
+      stage,
+      answer: insufficientInfo ? '' : answer,
+      sources: sources || [],
+      insufficientInfo: !!insufficientInfo
+    })
+  };
+  if (stage === 'N' && Array.isArray(kc.breakdown_reasons) && kc.breakdown_reasons.length) {
+    base.n_generation = suggestStructuralGeneration(kc.breakdown_reasons);
+  }
+  return { ...resPayload, kernel_v16: base };
 }
 
 const KG01_VIOLATION = 'KG-01_VIOLATION';
@@ -656,22 +691,24 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
  *
  * Returns:
  *   Search results, generated answer (or hard stop for B), session_id, research_stage
+ *
+ * POST /api/research/search — same behavior; body may include kernel_signals, data_anchors, methodology_flags (JSON objects or JSON strings).
  */
-app.get("/search", async (req, res) => {
-  const query = req.query.query;
+async function handleMatriyaSearch(req, res) {
+  const query = req.body?.query ?? req.query.query;
   if (!query) {
     return res.status(400).json({ error: "query parameter is required" });
   }
 
-  let nResults = parseInt(req.query.n_results) || 5;
+  let nResults = parseInt(req.body?.n_results ?? req.query.n_results, 10) || 5;
   if (nResults < 1 || nResults > 50) {
     nResults = 5;
   }
 
-  const filename = req.query.filename || null;
-  const generateAnswer = req.query.generate_answer !== 'false';
-  const stage = (req.query.stage || '').toUpperCase().trim();
-  const sessionId = req.query.session_id || null;
+  const filename = (req.body?.filename ?? req.query.filename) || null;
+  const generateAnswer = (req.body?.generate_answer ?? req.query.generate_answer) !== 'false';
+  const stage = String(req.body?.stage ?? req.query.stage ?? '').toUpperCase().trim();
+  const sessionId = (req.body?.session_id ?? req.query.session_id) || null;
 
   const filterMetadata = filename ? { filename } : null;
 
@@ -693,9 +730,10 @@ app.get("/search", async (req, res) => {
           research_stage_required: true
         });
       }
+      const krOpts = researchKernelOptsFromRequest(req);
       let gate;
       try {
-        gate = await validateAndAdvance(sessionId, stage, userId);
+        gate = await validateAndAdvance(sessionId, stage, userId, krOpts);
       } catch (e) {
         logger.error(`Research gate error: ${e.message}`);
         return res.status(500).json({ error: `Research gate error: ${e.message}` });
@@ -707,7 +745,7 @@ app.get("/search", async (req, res) => {
           complexityContext = { document_count: info?.document_count ?? 0, session_depth: 0 };
         } catch (_) {}
         await logDecisionAudit(sessionId, stage, 'deny', null, query, { session_id: sessionId, stage, research_gate_locked: !!gate.research_gate_locked, error: gate.error }, null, { complexity_context: complexityContext });
-        return res.status(400).json({
+        const denyPayload = {
           error: gate.error,
           research_stage_error: true,
           ...(gate.research_gate_locked && {
@@ -716,8 +754,23 @@ app.get("/search", async (req, res) => {
             status: gate.status || 'stopped',
             stopPipeline: gate.stopPipeline !== false,
             allowed_next_step: gate.allowed_next_step || 'recovery_required'
-          })
-        });
+          }),
+          ...(gate.insufficient_information && { insufficient_information: true }),
+          ...(gate.kernel_v16 && { kernel_v16: { spec: KERNEL_V16_VERSION, ...gate.kernel_v16 } })
+        };
+        if (gate.insufficient_information) {
+          denyPayload.kernel_v16 = {
+            spec: KERNEL_V16_VERSION,
+            ...(denyPayload.kernel_v16 || {}),
+            structured: buildStructuredKernelOutput({
+              stage,
+              answer: '',
+              sources: [],
+              insufficientInfo: true
+            })
+          };
+        }
+        return res.status(400).json(denyPayload);
       }
       const responseSessionId = gate.session.id;
       const responseType = gate.responseType;
@@ -733,19 +786,30 @@ app.get("/search", async (req, res) => {
       // B: Hard Stop only – no smart answer
       if (stage === 'B') {
         await logAudit(responseSessionId, stage, responseType, query);
-        return res.json({
-          query,
-          results_count: 0,
-          results: [],
-          answer: HARD_STOP_MESSAGE,
-          context_sources: 0,
-          context: '',
-          sources: [],
-          session_id: responseSessionId,
-          research_stage: stage,
-          response_type: responseType,
-          ...(enforcement && { matriya_enforcement: enforcement })
-        });
+        return res.json(
+          attachKernelV16ToPayload(
+            {
+              query,
+              results_count: 0,
+              results: [],
+              answer: HARD_STOP_MESSAGE,
+              context_sources: 0,
+              context: '',
+              sources: [],
+              session_id: responseSessionId,
+              research_stage: stage,
+              response_type: responseType,
+              ...(enforcement && { matriya_enforcement: enforcement })
+            },
+            {
+              stage,
+              answer: HARD_STOP_MESSAGE,
+              sources: [],
+              session: gate.session,
+              gateKernelV16: { stage_B_hard_stop: true }
+            }
+          )
+        );
       }
 
       // K/C: info only (no solutions) – we'll post-process answer. N/L: full answer
@@ -761,44 +825,57 @@ app.get("/search", async (req, res) => {
         const noAnswerFromRag = (kernelResult.reason || '').includes('לא נמצאה תשובה') || (kernelResult.reason || '').includes('No answer');
         if (noAnswerFromRag) {
           await logAudit(responseSessionId, stage, 'no_results', query);
-          return res.json({
+          const noAns = 'לא נמצא מידע רלוונטי במסמכים.';
+          const src = evidenceFromSearchResults(
+            kernelResult.search_results || [],
+            undefined,
+            undefined,
             query,
-            results_count: 0,
-            results: kernelResult.search_results || [],
-            answer: 'לא נמצא מידע רלוונטי במסמכים.',
-            context_sources: 0,
-            context: '',
-            sources: evidenceFromSearchResults(
-              kernelResult.search_results || [],
-              undefined,
-              undefined,
-              query,
-              'לא נמצא מידע רלוונטי במסמכים.'
-            ),
-            session_id: responseSessionId,
-            research_stage: stage,
-            response_type: 'no_results',
-            ...(enforcement && { matriya_enforcement: enforcement })
-          });
+            noAns
+          );
+          return res.json(
+            attachKernelV16ToPayload(
+              {
+                query,
+                results_count: 0,
+                results: kernelResult.search_results || [],
+                answer: noAns,
+                context_sources: 0,
+                context: '',
+                sources: src,
+                session_id: responseSessionId,
+                research_stage: stage,
+                response_type: 'no_results',
+                ...(enforcement && { matriya_enforcement: enforcement })
+              },
+              { stage, answer: noAns, sources: src, session: gate.session, gateKernelV16: gate.kernel_v16 }
+            )
+          );
         }
         await logAudit(responseSessionId, stage, 'blocked', query);
-        return res.json({
-          query,
-          results_count: 0,
-          results: [],
-          answer: null,
-          context_sources: 0,
-          context: '',
-          sources: [],
-          error: kernelResult.reason || 'תשובה נחסמה',
-          decision: kernelResult.decision,
-          state: kernelResult.state,
-          blocked: true,
-          block_reason: kernelResult.reason || '',
-          session_id: responseSessionId,
-          research_stage: stage,
-          ...(enforcement && { matriya_enforcement: enforcement })
-        });
+        const br = kernelResult.reason || 'תשובה נחסמה';
+        return res.json(
+          attachKernelV16ToPayload(
+            {
+              query,
+              results_count: 0,
+              results: [],
+              answer: null,
+              context_sources: 0,
+              context: '',
+              sources: [],
+              error: br,
+              decision: kernelResult.decision,
+              state: kernelResult.state,
+              blocked: true,
+              block_reason: br,
+              session_id: responseSessionId,
+              research_stage: stage,
+              ...(enforcement && { matriya_enforcement: enforcement })
+            },
+            { stage, answer: br, sources: [], session: gate.session, gateKernelV16: gate.kernel_v16 }
+          )
+        );
       }
 
       let answer = kernelResult.answer || null;
@@ -829,27 +906,39 @@ app.get("/search", async (req, res) => {
         }
       }
 
-      return res.json({
+      const evidenceSources = evidenceFromSearchResults(
+        kernelResult.search_results || [],
+        undefined,
+        undefined,
         query,
-        results_count: kernelResult.agent_results.doc_agent.results_count || 0,
-        results: kernelResult.search_results || [],
-        answer,
-        context_sources: kernelResult.agent_results.doc_agent.context_sources || 0,
-        context: kernelResult.context || '',
-        sources: evidenceFromSearchResults(kernelResult.search_results || [], undefined, undefined, query, answer),
-        error: null,
-        decision: kernelResult.decision,
-        state: kernelResult.state,
-        warning: kernelResult.warning,
-        session_id: responseSessionId,
-        research_stage: stage,
-        response_type: responseType,
-        ...(enforcement && { matriya_enforcement: enforcement }),
-        agent_results: {
-          contradiction: kernelResult.agent_results.contradiction_agent,
-          risk: kernelResult.agent_results.risk_agent
-        }
-      });
+        answer
+      );
+      return res.json(
+        attachKernelV16ToPayload(
+          {
+            query,
+            results_count: kernelResult.agent_results.doc_agent.results_count || 0,
+            results: kernelResult.search_results || [],
+            answer,
+            context_sources: kernelResult.agent_results.doc_agent.context_sources || 0,
+            context: kernelResult.context || '',
+            sources: evidenceSources,
+            error: null,
+            decision: kernelResult.decision,
+            state: kernelResult.state,
+            warning: kernelResult.warning,
+            session_id: responseSessionId,
+            research_stage: stage,
+            response_type: responseType,
+            ...(enforcement && { matriya_enforcement: enforcement }),
+            agent_results: {
+              contradiction: kernelResult.agent_results.contradiction_agent,
+              risk: kernelResult.agent_results.risk_agent
+            }
+          },
+          { stage, answer, sources: evidenceSources, session: gate.session, gateKernelV16: gate.kernel_v16 }
+        )
+      );
     } else {
       // No generate_answer – plain search (no stage required)
       const results = await getRagService().search(query, nResults, filterMetadata);
@@ -867,7 +956,10 @@ app.get("/search", async (req, res) => {
       error: `Error searching: ${e.message}`
     });
   }
-});
+}
+
+app.get("/search", handleMatriyaSearch);
+app.post("/api/research/search", handleMatriyaSearch);
 
 /**
  * Research run: either 4-agent loop (use_4_agents: true) or current single-shot flow (use_4_agents: false).
@@ -886,6 +978,16 @@ app.post("/api/research/run", async (req, res) => {
     const session = await ResearchSession.findByPk(sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const kcShutdown = session.kernel_context && session.kernel_context.possibility_shutdown;
+    if (use4Agents && kcShutdown) {
+      return res.status(409).json({
+        error:
+          'לאחר זיהוי שבירה (B) הופעל סגירת מרחב אפשרויות — אין אופטימיזציה/כוונון במסלול 4 סוכנים. השתמשו במסלול מחקר מהיר (שלב N) או פתחו סשן חדש.',
+        possibility_shutdown: true,
+        kernel_v16: { spec: KERNEL_V16_VERSION, code: 'POSSIBILITY_SPACE_SHUTDOWN' }
+      });
     }
 
     const violation = await getActiveViolation(sessionId);
@@ -989,6 +1091,7 @@ app.get("/research/session/:id", async (req, res) => {
       session_id: session.id,
       completed_stages: session.completed_stages || [],
       enforcement_overridden: !!session.enforcement_overridden,
+      kernel_context: session.kernel_context && typeof session.kernel_context === 'object' ? session.kernel_context : {},
       created_at: session.created_at,
       audit_log: logs.map(l => ({
         stage: l.stage,
@@ -1045,7 +1148,12 @@ app.get("/research/staging-proof", async (req, res) => {
       next_allowed: nextAllowed,
       gate_locked: !!violation,
       violation_id: violation?.id ?? null,
-      last_snapshot_cycle_index: lastSnapshotCycleIndex
+      last_snapshot_cycle_index: lastSnapshotCycleIndex,
+      kernel_v16: {
+        spec: KERNEL_V16_VERSION,
+        possibility_shutdown: !!(session.kernel_context && session.kernel_context.possibility_shutdown),
+        document_mode_n: !!(session.kernel_context && session.kernel_context.document_mode_n)
+      }
     });
   } catch (e) {
     logger.error(`Staging proof error: ${e.message}`);

@@ -3,18 +3,30 @@
  * Enforces: K→C→B→N→L only. No skip. Gate rules per stage.
  * When an active B-Integrity Violation exists for the session, the gate is locked.
  * Gate is deterministic: decision depends only on DB state (session, completed_stages, violations).
+ * Kernel v1.6: optional kernel_signals / data_anchors / methodology_flags (see validateAndAdvance opts).
  */
 import crypto from 'crypto';
 import { ResearchSession, ResearchAuditLog, STAGES_ORDER } from './database.js';
 import { getActiveViolation } from './integrityMonitor.js';
 import logger from './logger.js';
+import {
+  KERNEL_V16_VERSION,
+  evaluateBreakdown,
+  evaluateFailSafe,
+  validateDataAnchors,
+  checkExtrapolationRule,
+  checkMethodologyFlags,
+  validateLGate,
+  isStrictV16,
+  isAnchorRequired
+} from './kernelV16.js';
 
 const VALID_STAGES = new Set(STAGES_ORDER);
 
-const GATE_VERSION = '1.2';
+const GATE_VERSION = '1.6';
 /** Model version hash for Gate observability (Kernel Amendment v1.2). */
 export function getModelVersionHash() {
-  return crypto.createHash('sha256').update(`gate-${GATE_VERSION}-${STAGES_ORDER.join(',')}`).digest('hex').slice(0, 16);
+  return crypto.createHash('sha256').update(`gate-${GATE_VERSION}-kv${KERNEL_V16_VERSION}-${STAGES_ORDER.join(',')}`).digest('hex').slice(0, 16);
 }
 
 /** Gate observability context: confidence_score, basis_count, model_version_hash. */
@@ -55,6 +67,20 @@ function isStageAllowed(completedStages, stage) {
   return stage === next;
 }
 
+function sortStagesByOrder(stages) {
+  const arr = Array.isArray(stages) ? [...stages] : [];
+  return arr.sort((a, b) => STAGES_ORDER.indexOf(a) - STAGES_ORDER.indexOf(b));
+}
+
+function stripPostBStages(completedStages) {
+  return sortStagesByOrder((Array.isArray(completedStages) ? completedStages : []).filter((s) => s !== 'N' && s !== 'L'));
+}
+
+function mergeKernelContext(session, patch) {
+  const prev = session.kernel_context && typeof session.kernel_context === 'object' ? session.kernel_context : {};
+  return { ...prev, ...patch, kernel_spec: KERNEL_V16_VERSION };
+}
+
 /**
  * Get existing session by id. Returns { session, completed_stages } or null if not found.
  * Does NOT create. Use for search: no valid session → no handling.
@@ -90,8 +116,12 @@ export async function getOrCreateSession(sessionId, userId = null) {
  * Returns { ok, error, session, completed_stages, responseType }.
  * responseType: 'hard_stop' | 'info_only' | 'full_answer'
  * Without valid session → no handling.
+ * @param {object} [opts]
+ * @param {object|null} [opts.kernel_signals] – breakdown / OOD / residuals / l_validation / flags
+ * @param {object|null} [opts.data_anchors] – only experiment_snapshot | similar_experiments | failure_patterns
+ * @param {object|null} [opts.methodology_flags] – repeated_solution, patches, cost_rising_no_progress
  */
-export async function validateAndAdvance(sessionId, stage, userId = null) {
+export async function validateAndAdvance(sessionId, stage, userId = null, opts = {}) {
   if (!stage || !VALID_STAGES.has(stage)) {
     return { ok: false, error: 'stage is required and must be one of: K, C, B, N, L' };
   }
@@ -115,25 +145,175 @@ export async function validateAndAdvance(sessionId, stage, userId = null) {
     return { ok: false, error: 'Invalid or expired session. Use a valid session_id from POST /research/session.' };
   }
   const { session, completed_stages } = data;
-  if (!isStageAllowed(completed_stages, stage)) {
-    const next = getNextAllowedStage(completed_stages);
+  let workingStages = sortStagesByOrder(completed_stages);
+  const completedSet = new Set(workingStages);
+
+  const kernelSignals = opts.kernel_signals && typeof opts.kernel_signals === 'object' ? opts.kernel_signals : null;
+  const dataAnchors = opts.data_anchors && typeof opts.data_anchors === 'object' ? opts.data_anchors : null;
+  const methodologyFlags = opts.methodology_flags && typeof opts.methodology_flags === 'object' ? opts.methodology_flags : null;
+
+  const meth = checkMethodologyFlags(methodologyFlags);
+  if (meth.trip) {
+    const rolled = stripPostBStages(workingStages);
+    const kc = mergeKernelContext(session, {
+      possibility_shutdown: true,
+      methodology_trip: meth.reasons,
+      last_rollback_at: new Date().toISOString()
+    });
+    try {
+      await session.update({
+        completed_stages: rolled,
+        kernel_context: kc,
+        updated_at: new Date()
+      });
+    } catch (e) {
+      logger.warn(`Kernel v1.6 rollback update failed (kernel_context column missing?): ${e.message}`);
+      await session.update({ completed_stages: rolled, updated_at: new Date() });
+    }
+    return {
+      ok: false,
+      error:
+        'זוהתה כשל מתודולוגי (חזרות פתרון / טלאים / עלות עולה ללא התקדמות). בוצע חזרה מ-N/L והופעל סגירת אפשרויות. המשך מ-B.',
+      kernel_v16: {
+        back_to_B: true,
+        shutdown: true,
+        reasons: meth.reasons
+      }
+    };
+  }
+
+  const anchorCheck = validateDataAnchors(dataAnchors);
+  if (!anchorCheck.ok) {
+    return { ok: false, error: anchorCheck.error_he || anchorCheck.error_en || 'Invalid data anchors' };
+  }
+  if (isAnchorRequired() && anchorCheck.skipped) {
+    return {
+      ok: false,
+      error:
+        'נדרש עוגן נתונים (experiment_snapshot / similar_experiments / failure_patterns) — KERNEL_V16_ANCHOR_REQUIRED.',
+      kernel_v16: { code: 'ANCHORS_REQUIRED' }
+    };
+  }
+
+  if (!isStageAllowed(workingStages, stage)) {
+    const next = getNextAllowedStage(workingStages);
     return {
       ok: false,
       error: `Invalid stage transition. Allowed next stage: ${next}. Order is K→C→B→N→L only.`
     };
   }
 
-  const completedSet = new Set(completed_stages);
+  const firstVisitToN = stage === 'N' && !completedSet.has('N');
+  const firstVisitToL = stage === 'L' && !completedSet.has('L');
+
+  if (firstVisitToN) {
+    if (!completedSet.has('B')) {
+      return {
+        ok: false,
+        error: 'אין מעבר ל-N ללא השלמת שלב B.'
+      };
+    }
+    const extrap = checkExtrapolationRule(kernelSignals || {});
+    if (!extrap.ok) {
+      return { ok: false, error: extrap.message_he, kernel_v16: { code: 'EXTRAPOLATION_BLOCKED' } };
+    }
+    const strict = isStrictV16();
+    const signalsObj = kernelSignals && Object.keys(kernelSignals).length > 0 ? kernelSignals : null;
+
+    if (signalsObj) {
+      const fs = evaluateFailSafe(signalsObj);
+      if (!fs.ok) {
+        return {
+          ok: false,
+          error: fs.message_he || fs.message_en,
+          insufficient_information: true,
+          kernel_v16: { code: fs.code }
+        };
+      }
+      const br = evaluateBreakdown(signalsObj);
+      if (!br.breakdown) {
+        return {
+          ok: false,
+          error:
+            'לא זוהתה שבירה (B) לפי אותות שנשלחו — אין מעבר ל-N. עצירה: לא ממשיכים ללא breakdown.',
+          kernel_v16: { code: 'NO_BREAKDOWN', stop_to_N: true }
+        };
+      }
+    } else if (strict) {
+      return {
+        ok: false,
+        error: 'במצב KERNEL_V16_STRICT נדרש אובייקט kernel_signals עם זיהוי שבירה לשלב N.',
+        kernel_v16: { code: 'SIGNALS_REQUIRED_FOR_N' }
+      };
+    }
+  }
+
+  if (firstVisitToL) {
+    if (!completedSet.has('N')) {
+      return { ok: false, error: 'אין מעבר ל-L ללא השלמת שלב N.' };
+    }
+    const strict = isStrictV16();
+    const lv = kernelSignals?.l_validation ?? kernelSignals?.lValidation;
+    if (lv) {
+      const lg = validateLGate(lv);
+      if (!lg.ok) {
+        return {
+          ok: false,
+          error: `וידיאציית L נכשלה (${lg.reason}). נדרשו: ≥3 הרצות, שיפור מובהק מול baseline, יציבות.`,
+          kernel_v16: { code: lg.reason }
+        };
+      }
+    } else if (strict) {
+      return {
+        ok: false,
+        error: 'במצב KERNEL_V16_STRICT נדרש l_validation בקלט (≥3 הרצות, שיפור מול baseline, יציבות).',
+        kernel_v16: { code: 'L_VALIDATION_REQUIRED' }
+      };
+    }
+  }
+
   if (!completedSet.has(stage)) {
     completedSet.add(stage);
-    const updated = Array.from(completedSet).sort(
-      (a, b) => STAGES_ORDER.indexOf(a) - STAGES_ORDER.indexOf(b)
-    );
-    await session.update({
-      completed_stages: updated,
-      updated_at: new Date()
-    });
+    const updated = sortStagesByOrder(Array.from(completedSet));
+    let kernelPatch = { updated_at: new Date().toISOString() };
+    if (firstVisitToN) {
+      const br = kernelSignals && Object.keys(kernelSignals).length > 0 ? evaluateBreakdown(kernelSignals) : null;
+      if (br?.breakdown) {
+        kernelPatch = {
+          ...kernelPatch,
+          possibility_shutdown: true,
+          breakdown_reasons: br.reasons,
+          b_evaluated: true
+        };
+      } else if (!isStrictV16()) {
+        kernelPatch = {
+          ...kernelPatch,
+          document_mode_n: true
+        };
+      }
+    }
+    if (firstVisitToL && (kernelSignals?.l_validation || kernelSignals?.lValidation)) {
+      kernelPatch = { ...kernelPatch, l_validated: true };
+    }
+    const kc = mergeKernelContext(session, kernelPatch);
+    try {
+      await session.update({
+        completed_stages: updated,
+        kernel_context: kc,
+        updated_at: new Date()
+      });
+    } catch (e) {
+      logger.warn(`Research session update without kernel_context: ${e.message}`);
+      await session.update({
+        completed_stages: updated,
+        updated_at: new Date()
+      });
+    }
+  } else {
+    await session.update({ updated_at: new Date() });
   }
+
+  await session.reload();
 
   let responseType;
   if (stage === 'B') {
@@ -147,8 +327,12 @@ export async function validateAndAdvance(sessionId, stage, userId = null) {
   return {
     ok: true,
     session,
-    completed_stages: session.completed_stages || completed_stages,
-    responseType
+    completed_stages: session.completed_stages || workingStages,
+    responseType,
+    kernel_v16: {
+      spec: KERNEL_V16_VERSION,
+      possibility_shutdown: !!(session.kernel_context && session.kernel_context.possibility_shutdown)
+    }
   };
 }
 

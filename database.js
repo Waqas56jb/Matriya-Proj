@@ -207,6 +207,12 @@ const ResearchSession = sequelize ? sequelize.define('ResearchSession', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
     allowNull: false
+  },
+  /** Kernel FSCTM v1.6: breakdown flags, possibility_shutdown, L validation markers (JSON/JSONB). */
+  kernel_context: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: {}
   }
 }, {
   tableName: 'research_sessions',
