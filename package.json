@@ -15,7 +15,11 @@
     "check:task8": "node scripts/check-risk-oracle.js",
     "check:task2": "node scripts/check-integrity-rules-engine.js",
     "check:dashboard": "node scripts/check-dashboard-improvements.js",
-    "check:pre-llm-gate": "node scripts/check-pre-llm-gate.js"
+    "check:pre-llm-gate": "node scripts/check-pre-llm-gate.js",
+    "check:attribution-document-flow": "node scripts/check-attribution-and-document-flow.js",
+    "test:ask-matriya-david": "node scripts/run-ask-matriya-david-tests.mjs",
+    "verify:david-three": "node scripts/print-and-verify-david-three-tests.mjs",
+    "check:retrieval-threshold": "node scripts/check-retrieval-similarity-filter.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

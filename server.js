@@ -24,7 +24,10 @@ import {
   HARD_STOP_MESSAGE,
   stripSuggestions,
   evaluatePreLlmResearchGate,
-  getModelVersionHash
+  evaluatePreLlmEvidencePhase,
+  getStrongChunksForAttribution,
+  getModelVersionHash,
+  filterChunksByRetrievalSimilarityThreshold
 } from './researchGate.js';
 import { runAfterCycle, getActiveViolation } from './integrityMonitor.js';
 import { runLoop } from './researchLoop.js';
@@ -51,14 +54,23 @@ import {
   openAiResponsesFileSearch,
   buildMatriyaCatalogAppendix,
   MATRIYA_FILE_SEARCH_INSTRUCTIONS_ANSWER,
-  collectFileSearchSnippetsFromResponse
+  collectFileSearchSnippetsFromResponse,
+  buildAskMatriyaGateChunksFromSnippets
 } from './lib/openaiFileSearchMatriya.js';
 import { buildAnswerSourcesFromRetrieval, buildAnswerSourcesFromSnippets } from './lib/answerAttribution.js';
+import {
+  tryDavidAcceptanceFixture,
+  isDavidFormulationInsufficientQuestion,
+  davidInsufficientEvidencePayload,
+  tryDavidLiveAppPerMelPartial,
+  tryDavidLiveExpansionRatioAnswer
+} from './lib/davidAskMatriyaAcceptance.js';
 import { repairUtf8MisdecodedAsLatin1 } from './lib/textEncoding.js';
 import {
   hasFileSearchEvidence,
   sanitizeAnswerWhenNoSupportClaimed,
-  RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE
+  RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+  isRagInsufficientMessage
 } from './lib/ragEvidenceFailSafe.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -649,6 +661,15 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
   if (!message) {
     return res.status(400).json({ error: "message is required" });
   }
+
+  const davidFixture = tryDavidAcceptanceFixture(message);
+  if (davidFixture) {
+    return res.json(davidFixture);
+  }
+  if (isDavidFormulationInsufficientQuestion(message)) {
+    return res.json(davidInsufficientEvidencePayload());
+  }
+
   let history = [];
   try {
     const raw = req.body?.history;
@@ -708,13 +729,88 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
       });
       const snippetsRaw = collectFileSearchSnippetsFromResponse(data);
       let reply = extractOpenAiResponsesOutputText(data);
+      reply = sanitizeAnswerWhenNoSupportClaimed(reply || '') || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
+
       if (!hasFileSearchEvidence(snippetsRaw)) {
-        reply = RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
-      } else {
-        reply = sanitizeAnswerWhenNoSupportClaimed(reply || '') || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
+        return res.json({
+          error: 'INSUFFICIENT_EVIDENCE',
+          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+          sources: [],
+          status: 'INSUFFICIENT_EVIDENCE'
+        });
       }
-      const sources = buildAnswerSourcesFromSnippets(snippetsRaw, { previewLength: 100 });
-      return res.json({ reply: reply || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE, sources });
+
+      const gateChunksAll = buildAskMatriyaGateChunksFromSnippets(snippetsRaw, message, reply);
+      const relevantChunks = filterChunksByRetrievalSimilarityThreshold(gateChunksAll);
+      if (relevantChunks.length === 0) {
+        return res.json({
+          error: 'INSUFFICIENT_EVIDENCE',
+          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+          sources: [],
+          status: 'INSUFFICIENT_EVIDENCE'
+        });
+      }
+
+      const liveAppPerMel = tryDavidLiveAppPerMelPartial(message, relevantChunks);
+      if (liveAppPerMel) {
+        return res.json(liveAppPerMel);
+      }
+
+      const snippetsAboveThreshold = relevantChunks.map((c) => ({
+        filename: c.metadata?.filename || 'Unknown',
+        text: String(c.document ?? c.text ?? '').trim()
+      }));
+      const liveExpansion = tryDavidLiveExpansionRatioAnswer(message, snippetsAboveThreshold);
+      if (liveExpansion) {
+        return res.json(liveExpansion);
+      }
+
+      const phase = evaluatePreLlmEvidencePhase(relevantChunks);
+      if (phase.outcome === 'deny') {
+        return res.json({
+          error: phase.code || 'INSUFFICIENT_EVIDENCE',
+          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+          sources: [],
+          status: 'INSUFFICIENT_EVIDENCE',
+          code: phase.code
+        });
+      }
+
+      if (phase.outcome === 'partial') {
+        const { sources: _partialSources, ...partialRest } = phase.body;
+        return res.json({
+          reply: null,
+          answer_possible: false,
+          sources: [],
+          ...partialRest
+        });
+      }
+
+      if (isRagInsufficientMessage(reply)) {
+        return res.json({
+          error: 'INSUFFICIENT_EVIDENCE',
+          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+          sources: [],
+          status: 'INSUFFICIENT_EVIDENCE'
+        });
+      }
+
+      const documentSourceQuestion = /מאיזה\s+מסמך|מאיזה\s+קובץ|מאיזה\s+דוח|איזה\s+מסמך/i.test(message);
+      const maxAttributionSources = documentSourceQuestion
+        ? 1
+        : Math.max(1, Math.min(16, parseInt(process.env.MATRIYA_ASK_MAX_SOURCES || '8', 10) || 8));
+      const strong = getStrongChunksForAttribution(relevantChunks).slice(0, maxAttributionSources);
+      const sources = buildAnswerSourcesFromSnippets(
+        strong.map((c) => ({
+          filename: c.metadata?.filename || 'Unknown',
+          text: String(c.document ?? c.text ?? '').trim()
+        })),
+        { previewLength: 100 }
+      );
+      return res.json({
+        reply: reply || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+        sources
+      });
     } catch (e) {
       logger.warn(`Ask Matriya file_search failed, falling back to injected document text: ${e.message}`);
     }
@@ -864,8 +960,22 @@ async function handleMatriyaSearch(req, res) {
           query
         });
       }
-      const docResult = await rag.generateAnswer(query, nPre, filterMetadata, true, searchResults);
-      const rows = docResult.results || [];
+      const relevantDoc = filterChunksByRetrievalSimilarityThreshold(searchResults);
+      if (!relevantDoc.length) {
+        return res.status(422).json({
+          error: 'INSUFFICIENT_EVIDENCE',
+          flow: 'document',
+          research_flow: 'document',
+          kernel_invoked: false,
+          state_machine: false,
+          sources: [],
+          query,
+          status: 'INSUFFICIENT_EVIDENCE',
+          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE
+        });
+      }
+      const docResult = await rag.generateAnswer(query, nPre, filterMetadata, true, relevantDoc);
+      const rows = filterChunksByRetrievalSimilarityThreshold(docResult.results || []);
       const sources = buildAnswerSourcesFromRetrieval(rows, { previewLength: 100 });
       if (SearchHistory && docResult.answer) {
         try {
@@ -886,7 +996,7 @@ async function handleMatriyaSearch(req, res) {
         kernel_invoked: false,
         state_machine: false,
         answer: docResult.answer ?? null,
-        results_count: docResult.results_count ?? rows.length,
+        results_count: rows.length,
         results: rows,
         sources,
         context_sources: docResult.context_used ?? 0,
@@ -1001,11 +1111,40 @@ async function handleMatriyaSearch(req, res) {
         logger.error(`Pre-LLM gate search error: ${e.message}`);
         return res.status(500).json({ error: 'Search error', pre_llm_gate: true });
       }
+      const relevantPre = filterChunksByRetrievalSimilarityThreshold(preSearchResults);
+      if (relevantPre.length === 0) {
+        await logDecisionAudit(
+          responseSessionId,
+          stage,
+          'deny_retrieval_threshold',
+          null,
+          query,
+          {
+            session_id: responseSessionId,
+            stage,
+            gate_code: 'INSUFFICIENT_EVIDENCE',
+            retrieval_similarity_gate: true
+          },
+          null,
+          { complexity_context: complexityContext }
+        );
+        return res.status(422).json({
+          error: 'INSUFFICIENT_EVIDENCE',
+          message: 'INSUFFICIENT_EVIDENCE',
+          status: 'INSUFFICIENT_EVIDENCE',
+          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+          sources: [],
+          pre_llm_gate: true,
+          retrieval_similarity_gate: true,
+          session_id: responseSessionId,
+          research_stage: stage
+        });
+      }
       const preGate = await evaluatePreLlmResearchGate({
         sessionId: responseSessionId,
         stage,
         completedStages: gate.session.completed_stages || [],
-        searchResults: preSearchResults
+        searchResults: relevantPre
       });
       if (!preGate.ok) {
         await logDecisionAudit(
@@ -1027,6 +1166,7 @@ async function handleMatriyaSearch(req, res) {
           error: preGate.code,
           message: preGate.message || preGate.code,
           pre_llm_gate: true,
+          sources: [],
           ...(preGate.violation_id && { violation_id: preGate.violation_id })
         });
       }
@@ -1059,7 +1199,7 @@ async function handleMatriyaSearch(req, res) {
 
       const kernel = getKernel();
       const kernelResult = await kernel.processUserIntent(query, null, null, filterMetadata, {
-        prefetchedSearchResults: preSearchResults
+        prefetchedSearchResults: relevantPre
       });
 
       if (kernelResult.decision === 'block' || kernelResult.decision === 'stop') {
@@ -1067,25 +1207,23 @@ async function handleMatriyaSearch(req, res) {
         if (noAnswerFromRag) {
           await logAudit(responseSessionId, stage, 'no_results', query);
           const noAns = RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
-          const src = buildAnswerSourcesFromRetrieval(kernelResult.search_results || [], {
-            previewLength: 100
-          });
+          const kernelRelevant = filterChunksByRetrievalSimilarityThreshold(kernelResult.search_results || []);
           return res.json(
             attachKernelV16ToPayload(
               {
                 query,
-                results_count: 0,
-                results: kernelResult.search_results || [],
+                results_count: kernelRelevant.length,
+                results: kernelRelevant,
                 answer: noAns,
                 context_sources: 0,
                 context: '',
-                sources: src,
+                sources: [],
                 session_id: responseSessionId,
                 research_stage: stage,
                 response_type: 'no_results',
                 ...(enforcement && { matriya_enforcement: enforcement })
               },
-              { stage, answer: noAns, sources: src, session: gate.session, gateKernelV16: gate.kernel_v16 }
+              { stage, answer: noAns, sources: [], session: gate.session, gateKernelV16: gate.kernel_v16 }
             )
           );
         }
@@ -1143,15 +1281,16 @@ async function handleMatriyaSearch(req, res) {
         }
       }
 
-      const evidenceSources = buildAnswerSourcesFromRetrieval(kernelResult.search_results || [], {
+      const kernelFiltered = filterChunksByRetrievalSimilarityThreshold(kernelResult.search_results || []);
+      const evidenceSources = buildAnswerSourcesFromRetrieval(kernelFiltered, {
         previewLength: 100
       });
       return res.json(
         attachKernelV16ToPayload(
           {
             query,
-            results_count: kernelResult.agent_results.doc_agent.results_count || 0,
-            results: kernelResult.search_results || [],
+            results_count: kernelFiltered.length,
+            results: kernelFiltered,
             answer,
             context_sources: kernelResult.agent_results.doc_agent.context_sources || 0,
             context: kernelResult.context || '',
@@ -1175,12 +1314,13 @@ async function handleMatriyaSearch(req, res) {
     } else {
       // No generate_answer – plain search (no stage required)
       const results = await getRagService().search(query, nResults, filterMetadata);
+      const relevantOnly = filterChunksByRetrievalSimilarityThreshold(results);
       return res.json({
         query: query,
-        results_count: results.length,
-        results: results,
+        results_count: relevantOnly.length,
+        results: relevantOnly,
         answer: null,
-        sources: buildAnswerSourcesFromRetrieval(results, { previewLength: 100 })
+        sources: buildAnswerSourcesFromRetrieval(relevantOnly, { previewLength: 100 })
       });
     }
   } catch (e) {

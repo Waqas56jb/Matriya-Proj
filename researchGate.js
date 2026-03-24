@@ -389,6 +389,27 @@ export function getPreLlmGateThresholds() {
   };
 }
 
+/**
+ * Post-retrieval similarity floor (0–1). Chunks below this never become `sources` and are dropped before
+ * evidence gate / attribution. Tunable via env (default 0.7 per product spec).
+ */
+export function getRetrievalSimilarityThreshold() {
+  const t = parseFloat(process.env.MATRIYA_RETRIEVAL_SIMILARITY_THRESHOLD || '0.7');
+  return Number.isFinite(t) ? Math.min(1, Math.max(0, t)) : 0.7;
+}
+
+/**
+ * Keep only chunks whose unified retrieval similarity is >= threshold (default from env).
+ */
+export function filterChunksByRetrievalSimilarityThreshold(chunks, threshold) {
+  const thr =
+    threshold !== undefined && threshold !== null && Number.isFinite(Number(threshold))
+      ? Math.min(1, Math.max(0, Number(threshold)))
+      : getRetrievalSimilarityThreshold();
+  const arr = Array.isArray(chunks) ? chunks : [];
+  return arr.filter((c) => retrievalSimilarityForGate(c) >= thr);
+}
+
 const MIN_DOC_CHARS_EVIDENCE = 12;
 
 /**
@@ -432,6 +453,12 @@ function partitionPreLlmEvidence(searchResults) {
   const substantive = chunks.filter((c) => String(c.document ?? c.text ?? '').trim().length >= MIN_DOC_CHARS_EVIDENCE);
   const strong = substantive.filter((c) => retrievalSimilarityForGate(c) > cfg.minSimilarity);
   return { cfg, chunks, substantive, strong };
+}
+
+/** Subset that passes the same similarity bar as pre-LLM gate — citations only for these (e.g. Ask Matriya). */
+export function getStrongChunksForAttribution(searchResults) {
+  const { strong } = partitionPreLlmEvidence(searchResults);
+  return strong;
 }
 
 function partialEvidenceBody(fields, chunksForSources) {

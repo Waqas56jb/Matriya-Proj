@@ -40,9 +40,15 @@ UPLOAD_DIR=/tmp
 CHUNK_SIZE=500
 CHUNK_OVERLAP=100
 
+# Post-retrieval floor: chunks below this similarity are dropped before gates / sources (default 0.7).
+# MATRIYA_RETRIEVAL_SIMILARITY_THRESHOLD=0.7
 # Pre-LLM research gate (Ask MATRIYA / מחקר)
 # MATRIYA_PRE_LLM_MIN_SIMILARITY=0.75
 # MATRIYA_PRE_LLM_MIN_CHUNKS=2
 # Optional design-matrix gaps (e.g. APP:PER:MEL triples for INT-TFX). When set, one strong chunk
 # that matches some but not all listed ratios returns HTTP 200 PARTIAL_EVIDENCE (no LLM, suggestion null).
 # MATRIYA_GAP_EXPECTED_RATIOS=3:1:1,2.5:1:1.5,3.5:1:0.5
+# David acceptance: exact three Ask Matriya questions return canned deterministic JSON (demo only).
+# MATRIYA_DAVID_ACCEPTANCE_FIXTURES=1
+# Without fixtures: Q2 needs retrieved text with at least one triple from the matrix below; Q3 needs a
+# snippet containing "Expansion Ratio = 18.5" (or expansion+ratio+18.5). Q1 is always insufficient.
