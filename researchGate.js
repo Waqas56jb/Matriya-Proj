@@ -398,6 +398,12 @@ export function getRetrievalSimilarityThreshold() {
   return Number.isFinite(t) ? Math.min(1, Math.max(0, t)) : 0.7;
 }
 
+/** Max attribution sources for research flow (חוק קרנל – top_k). Default 3. */
+export function getMaxAttributionSources() {
+  const k = parseInt(process.env.MATRIYA_MAX_ATTRIBUTION_SOURCES || '3', 10);
+  return Number.isFinite(k) && k >= 1 && k <= 24 ? k : 3;
+}
+
 /**
  * Keep only chunks whose unified retrieval similarity is >= threshold (default from env).
  */

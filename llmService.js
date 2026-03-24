@@ -27,15 +27,16 @@ class LLMService {
     }
   }
 
-  async generateAnswer(question, context, maxLength = 500) {
+  async generateAnswer(question, context, maxLength = 500, citationOnly = false) {
     /**
      * Generate an answer based on question and context from RAG
-     * 
+     *
      * Args:
      *   question: User's question
      *   context: Relevant text chunks from RAG search
      *   max_length: Maximum length of generated answer
-     * 
+     *   citation_only: Stage K/C – cite existing knowledge only, no interpretation
+     *
      * Returns:
      *   Generated answer or null if error
      */
@@ -43,11 +44,16 @@ class LLMService {
       logger.error(`Cannot generate answer: ${this.provider.toUpperCase()} API key not configured`);
       return null;
     }
-    
-    // Format prompt for instruction-tuned models – require Hebrew to avoid Arabic drift
-    const systemPrompt =
+
+    // חוק קרנל – שלב K: only quote existing knowledge, no explanation, no inference
+    const citationOnlySystem =
+      "בשלב קרנל K/C: רק צטט ידע קיים מהמסמכים. אסור להסביר למה, להסיק התאמה או להוסיף משמעות. " +
+      "פורמט: \"במסמך X מופיע: [ציטוט מדויק]\". אם אין במסמכים מידע רלוונטי: אין במערכת מידע תומך לשאלה זו. " +
+      "ענה בעברית בלבד. אסור להשתמש בערבית.";
+    const defaultSystem =
       "Based on the given context, answer the question clearly and concisely. You must respond in Hebrew (עברית) only. Do not use Arabic. " +
       "If the context does not contain enough information to answer, respond with this single Hebrew sentence only — no bullet lists, no recommendations, no next steps: אין במערכת מידע תומך לשאלה זו.";
+    const systemPrompt = citationOnly ? citationOnlySystem : defaultSystem;
     const userContent = `Context:\n${context}\n\nQuestion: ${question}`;
     
     try {
@@ -98,7 +104,10 @@ class LLMService {
         }
       } else {
         // Hugging Face: keep prompt format
-        const prompt = `Based on the following context, answer the question clearly and concisely. IMPORTANT: You must respond in Hebrew (עברית) only. Do not use Arabic.\n\nContext:\n${context}\n\nQuestion: ${question}\n\nAnswer (in Hebrew only):`;
+        const instruction = citationOnly
+          ? "בשלב קרנל K/C: רק צטט ידע קיים מהמסמכים. אסור להסביר, להסיק או להוסיף משמעות. פורמט: \"במסמך X מופיע: [ציטוט]\". אם אין מידע: אין במערכת מידע תומך לשאלה זו. "
+          : "Based on the following context, answer the question clearly and concisely. ";
+        const prompt = `${instruction}IMPORTANT: You must respond in Hebrew (עברית) only. Do not use Arabic.\n\nContext:\n${context}\n\nQuestion: ${question}\n\nAnswer (in Hebrew only):`;
         // Hugging Face API format
         const response = await axios.post(
           this.apiUrl,

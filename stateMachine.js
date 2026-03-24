@@ -130,7 +130,10 @@ class Kernel {
         const nDoc = this.ragService.getDocAgentRetrievalCount(filterMetadata);
         const prefetched =
           options && Array.isArray(options.prefetchedSearchResults) ? options.prefetchedSearchResults : null;
-        const docResult = await this.ragService.generateAnswer(query, nDoc, filterMetadata, true, prefetched);
+        const citationOnly = !!(options && options.citationOnly);
+        const docResult = await this.ragService.generateAnswer(
+          query, nDoc, filterMetadata, true, prefetched, citationOnly
+        );
         docAnswer = docResult.answer;
         docContext = docResult.context || '';
         docSearchResults = docResult.results || [];

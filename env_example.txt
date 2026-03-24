@@ -42,6 +42,7 @@ CHUNK_OVERLAP=100
 
 # Post-retrieval floor: chunks below this similarity are dropped before gates / sources (default 0.7).
 # MATRIYA_RETRIEVAL_SIMILARITY_THRESHOLD=0.7
+# MATRIYA_MAX_ATTRIBUTION_SOURCES=3  # Research flow: top_k sources (חוק קרנל)
 # Pre-LLM research gate (Ask MATRIYA / מחקר)
 # MATRIYA_PRE_LLM_MIN_SIMILARITY=0.75
 # MATRIYA_PRE_LLM_MIN_CHUNKS=2

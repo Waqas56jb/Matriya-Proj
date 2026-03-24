@@ -27,7 +27,8 @@ import {
   evaluatePreLlmEvidencePhase,
   getStrongChunksForAttribution,
   getModelVersionHash,
-  filterChunksByRetrievalSimilarityThreshold
+  filterChunksByRetrievalSimilarityThreshold,
+  getMaxAttributionSources
 } from './researchGate.js';
 import { runAfterCycle, getActiveViolation } from './integrityMonitor.js';
 import { runLoop } from './researchLoop.js';
@@ -58,6 +59,11 @@ import {
   buildAskMatriyaGateChunksFromSnippets
 } from './lib/openaiFileSearchMatriya.js';
 import { buildAnswerSourcesFromRetrieval, buildAnswerSourcesFromSnippets } from './lib/answerAttribution.js';
+import {
+  filterRetrievalRowsByAnswerBinding,
+  filterSnippetsByAnswerBinding,
+  getAnswerBindingRequirements
+} from './lib/answerSourceBindingFilter.js';
 import {
   tryDavidAcceptanceFixture,
   isDavidFormulationInsufficientQuestion,
@@ -799,14 +805,22 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
       const maxAttributionSources = documentSourceQuestion
         ? 1
         : Math.max(1, Math.min(16, parseInt(process.env.MATRIYA_ASK_MAX_SOURCES || '8', 10) || 8));
-      const strong = getStrongChunksForAttribution(relevantChunks).slice(0, maxAttributionSources);
-      const sources = buildAnswerSourcesFromSnippets(
-        strong.map((c) => ({
+      const allRelevantSnippets = relevantChunks.map((c) => ({
+        filename: c.metadata?.filename || 'Unknown',
+        text: String(c.document ?? c.text ?? '').trim()
+      }));
+      const bindReqs = getAnswerBindingRequirements(reply);
+      let sourceSnippets;
+      if (bindReqs && bindReqs.length > 0) {
+        sourceSnippets = filterSnippetsByAnswerBinding(allRelevantSnippets, reply).slice(0, maxAttributionSources);
+      } else {
+        const strong = getStrongChunksForAttribution(relevantChunks).slice(0, maxAttributionSources);
+        sourceSnippets = strong.map((c) => ({
           filename: c.metadata?.filename || 'Unknown',
           text: String(c.document ?? c.text ?? '').trim()
-        })),
-        { previewLength: 100 }
-      );
+        }));
+      }
+      const sources = buildAnswerSourcesFromSnippets(sourceSnippets, { previewLength: 100 });
       return res.json({
         reply: reply || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
         sources
@@ -975,7 +989,8 @@ async function handleMatriyaSearch(req, res) {
         });
       }
       const docResult = await rag.generateAnswer(query, nPre, filterMetadata, true, relevantDoc);
-      const rows = filterChunksByRetrievalSimilarityThreshold(docResult.results || []);
+      let rows = filterChunksByRetrievalSimilarityThreshold(docResult.results || []);
+      rows = filterRetrievalRowsByAnswerBinding(rows, docResult.answer || '');
       const sources = buildAnswerSourcesFromRetrieval(rows, { previewLength: 100 });
       if (SearchHistory && docResult.answer) {
         try {
@@ -1198,8 +1213,10 @@ async function handleMatriyaSearch(req, res) {
       }
 
       const kernel = getKernel();
+      const citationOnly = stage === 'K' || stage === 'C';
       const kernelResult = await kernel.processUserIntent(query, null, null, filterMetadata, {
-        prefetchedSearchResults: relevantPre
+        prefetchedSearchResults: relevantPre,
+        citationOnly
       });
 
       if (kernelResult.decision === 'block' || kernelResult.decision === 'stop') {
@@ -1281,16 +1298,20 @@ async function handleMatriyaSearch(req, res) {
         }
       }
 
-      const kernelFiltered = filterChunksByRetrievalSimilarityThreshold(kernelResult.search_results || []);
-      const evidenceSources = buildAnswerSourcesFromRetrieval(kernelFiltered, {
-        previewLength: 100
+      let kernelFiltered = filterChunksByRetrievalSimilarityThreshold(kernelResult.search_results || []);
+      kernelFiltered = filterRetrievalRowsByAnswerBinding(kernelFiltered, answer || '');
+      const maxSources = getMaxAttributionSources();
+      const topChunks = kernelFiltered.slice(0, maxSources);
+      const evidenceSources = buildAnswerSourcesFromRetrieval(topChunks, {
+        previewLength: 100,
+        maxItems: maxSources
       });
       return res.json(
         attachKernelV16ToPayload(
           {
             query,
-            results_count: kernelFiltered.length,
-            results: kernelFiltered,
+            results_count: topChunks.length,
+            results: topChunks,
             answer,
             context_sources: kernelResult.agent_results.doc_agent.context_sources || 0,
             context: kernelResult.context || '',

@@ -366,7 +366,14 @@ class RAGService {
     return scoredResults.slice(0, nResults);
   }
   
-  async generateAnswer(query, nResults = 5, filterMetadata = null, useLlm = true, prefetchedSearchResults = null) {
+  async generateAnswer(
+    query,
+    nResults = 5,
+    filterMetadata = null,
+    useLlm = true,
+    prefetchedSearchResults = null,
+    citationOnly = false
+  ) {
     /**
      * Search for relevant documents and generate an answer using LLM
      * 
@@ -470,7 +477,7 @@ class RAGService {
     let answer = null;
     if (useLlm && this.llmService.isAvailable()) {
       logger.info("Generating answer using LLM...");
-      answer = await this.llmService.generateAnswer(query, context);
+      answer = await this.llmService.generateAnswer(query, context, 500, citationOnly);
     } else if (useLlm) {
       logger.warn("LLM service not available, returning search results only");
     }
