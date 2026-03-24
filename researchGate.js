@@ -20,6 +20,8 @@ import {
   isStrictV16,
   isAnchorRequired
 } from './kernelV16.js';
+import { detectGaps, getGapDetectionOptionsFromEnv } from './lib/researchEvidenceGaps.js';
+import { buildAnswerSourcesFromRetrieval } from './lib/answerAttribution.js';
 
 const VALID_STAGES = new Set(STAGES_ORDER);
 
@@ -424,24 +426,88 @@ export function retrievalSimilarityForGate(hit) {
   return 0;
 }
 
-/**
- * Steps 1–2 only: no / weak evidence (no DB).
- */
-export function evaluatePreLlmEvidenceGate(searchResults) {
+function partitionPreLlmEvidence(searchResults) {
   const cfg = getPreLlmGateThresholds();
   const chunks = Array.isArray(searchResults) ? searchResults : [];
-  if (chunks.length === 0) {
-    return { ok: false, httpStatus: 422, code: 'INSUFFICIENT_EVIDENCE' };
-  }
   const substantive = chunks.filter((c) => String(c.document ?? c.text ?? '').trim().length >= MIN_DOC_CHARS_EVIDENCE);
-  if (substantive.length === 0) {
-    return { ok: false, httpStatus: 422, code: 'INSUFFICIENT_EVIDENCE' };
-  }
   const strong = substantive.filter((c) => retrievalSimilarityForGate(c) > cfg.minSimilarity);
-  if (strong.length < cfg.minStrongChunks) {
-    return { ok: false, httpStatus: 422, code: 'LOW_CONFIDENCE_EVIDENCE' };
+  return { cfg, chunks, substantive, strong };
+}
+
+function partialEvidenceBody(fields, chunksForSources) {
+  return {
+    ...fields,
+    suggestion: fields.suggestion ?? null,
+    sources: buildAnswerSourcesFromRetrieval(chunksForSources, { previewLength: 100 })
+  };
+}
+
+/**
+ * Evidence step before LLM: proceed | partial (200 body) | deny.
+ * Partial: (1) gap matrix from env + detectGaps, or (2) exactly one strong chunk (single-source / David partial).
+ */
+export function evaluatePreLlmEvidencePhase(searchResults) {
+  const { cfg, chunks, substantive, strong } = partitionPreLlmEvidence(searchResults);
+  if (chunks.length === 0) {
+    return { outcome: 'deny', httpStatus: 422, code: 'INSUFFICIENT_EVIDENCE' };
   }
-  return { ok: true };
+  if (substantive.length === 0) {
+    return { outcome: 'deny', httpStatus: 422, code: 'INSUFFICIENT_EVIDENCE' };
+  }
+  if (strong.length >= cfg.minStrongChunks) {
+    return { outcome: 'proceed' };
+  }
+
+  const gaps = detectGaps(strong, getGapDetectionOptionsFromEnv());
+  if (gaps && gaps.uncovered.length > 0) {
+    return {
+      outcome: 'partial',
+      body: partialEvidenceBody(
+        {
+          status: 'PARTIAL_EVIDENCE',
+          what_exists: gaps.covered,
+          what_missing: gaps.uncovered,
+          gap_type: gaps.gap_type,
+          suggestion: null
+        },
+        strong
+      )
+    };
+  }
+
+  if (strong.length === 1) {
+    const c = strong[0];
+    const docName = String(c.metadata?.filename ?? c.metadata?.name ?? 'unknown');
+    const tx = String(c.document ?? c.text ?? '').trim();
+    const prev = tx.length > 80 ? `${tx.slice(0, 80)}…` : tx;
+    return {
+      outcome: 'partial',
+      body: partialEvidenceBody(
+        {
+          status: 'PARTIAL_EVIDENCE',
+          what_exists: [`${docName}: ${prev}`],
+          what_missing: ['additional_supporting_chunks', 'cross_document_validation'],
+          gap_type: 'single_strong_source',
+          suggestion: null
+        },
+        strong
+      )
+    };
+  }
+
+  return { outcome: 'deny', httpStatus: 422, code: 'INSUFFICIENT_EVIDENCE' };
+}
+
+/**
+ * Strict "enough chunks for LLM" check (no partial branch). For scripts / legacy callers.
+ */
+export function evaluatePreLlmEvidenceGate(searchResults) {
+  const phase = evaluatePreLlmEvidencePhase(searchResults);
+  if (phase.outcome === 'proceed') return { ok: true };
+  if (phase.outcome === 'partial') {
+    return { ok: false, httpStatus: 422, code: 'PARTIAL_EVIDENCE' };
+  }
+  return { ok: false, httpStatus: phase.httpStatus, code: phase.code };
 }
 
 /** Research FSM only (no DB). Exported for tests / scripts. */
@@ -470,21 +536,54 @@ export function evaluatePreLlmIntegrityGate(activeViolation) {
 }
 
 /**
- * Deterministic pre-LLM gate: evidence → research FSM stage → integrity (defense in depth).
- * Order matches product spec: insufficient → low confidence → invalid stage → violation.
- * FSM is checked before querying violations (no extra DB round-trip on bad stage).
+ * FSM + integrity only (no chunk logic). FSM before DB violation lookup.
  */
-export async function evaluatePreLlmResearchGate({ sessionId, stage, completedStages, searchResults }) {
-  const ev = evaluatePreLlmEvidenceGate(searchResults);
-  if (!ev.ok) return ev;
-
+export async function evaluatePreLlmFsmIntegrityOnly({ sessionId, stage, completedStages }) {
   const fsm = evaluatePreLlmFsmGateOnly({ stage, completedStages });
-  if (!fsm.ok) return fsm;
-
+  if (!fsm.ok) {
+    return {
+      ok: false,
+      httpStatus: fsm.httpStatus,
+      code: fsm.code,
+      message: fsm.message
+    };
+  }
   const violation = await getActiveViolation(sessionId);
   const integ = evaluatePreLlmIntegrityGate(violation);
-  if (!integ.ok) return integ;
+  if (!integ.ok) {
+    return {
+      ok: false,
+      httpStatus: integ.httpStatus,
+      code: integ.code,
+      message: integ.message,
+      violation_id: integ.violation_id
+    };
+  }
+  return { ok: true };
+}
 
+/**
+ * Deterministic pre-LLM gate: FSM + integrity → evidence (including PARTIAL_EVIDENCE) → proceed to LLM.
+ */
+export async function evaluatePreLlmResearchGate({ sessionId, stage, completedStages, searchResults }) {
+  const fsmInt = await evaluatePreLlmFsmIntegrityOnly({ sessionId, stage, completedStages });
+  if (!fsmInt.ok) {
+    return {
+      ok: false,
+      httpStatus: fsmInt.httpStatus,
+      code: fsmInt.code,
+      message: fsmInt.message,
+      ...(fsmInt.violation_id != null && { violation_id: fsmInt.violation_id })
+    };
+  }
+
+  const ev = evaluatePreLlmEvidencePhase(searchResults);
+  if (ev.outcome === 'partial') {
+    return { ok: true, partialEvidence: ev.body };
+  }
+  if (ev.outcome === 'deny') {
+    return { ok: false, httpStatus: ev.httpStatus, code: ev.code, message: ev.code };
+  }
   return { ok: true };
 }
 

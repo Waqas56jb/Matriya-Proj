@@ -51,10 +51,9 @@ import {
   openAiResponsesFileSearch,
   buildMatriyaCatalogAppendix,
   MATRIYA_FILE_SEARCH_INSTRUCTIONS_ANSWER,
-  collectFileSearchSnippetsFromResponse,
-  normalizeEvidenceSources,
-  evidenceFromSearchResults
+  collectFileSearchSnippetsFromResponse
 } from './lib/openaiFileSearchMatriya.js';
+import { buildAnswerSourcesFromRetrieval, buildAnswerSourcesFromSnippets } from './lib/answerAttribution.js';
 import { repairUtf8MisdecodedAsLatin1 } from './lib/textEncoding.js';
 import {
   hasFileSearchEvidence,
@@ -714,13 +713,7 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
       } else {
         reply = sanitizeAnswerWhenNoSupportClaimed(reply || '') || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
       }
-      const sources = normalizeEvidenceSources(
-        snippetsRaw,
-        undefined,
-        undefined,
-        message,
-        reply
-      );
+      const sources = buildAnswerSourcesFromSnippets(snippetsRaw, { previewLength: 100 });
       return res.json({ reply: reply || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE, sources });
     } catch (e) {
       logger.warn(`Ask Matriya file_search failed, falling back to injected document text: ${e.message}`);
@@ -819,6 +812,7 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
  *   n_results: Number of results to return (default: 5)
  *   filename: Optional filename filter
  *   generate_answer: Whether to generate AI answer from results (default: true)
+ *   flow: When set to "document", skips research session/stage, FSM gate, pre-LLM research gate, and kernel — retrieval + LLM answer only. Any other value uses full research flow.
  *
  * Returns:
  *   Search results, generated answer (or hard stop for B), session_id, research_stage
@@ -838,6 +832,8 @@ async function handleMatriyaSearch(req, res) {
 
   const filename = (req.body?.filename ?? req.query.filename) || null;
   const generateAnswer = (req.body?.generate_answer ?? req.query.generate_answer) !== 'false';
+  const flowRaw = String(req.body?.flow ?? req.query.flow ?? '').toLowerCase().trim();
+  const documentFlow = flowRaw === 'document';
   const stage = String(req.body?.stage ?? req.query.stage ?? '').toUpperCase().trim();
   const sessionId = (req.body?.session_id ?? req.query.session_id) || null;
 
@@ -847,6 +843,58 @@ async function handleMatriyaSearch(req, res) {
   const userId = user?.id ?? null;
 
   try {
+    if (generateAnswer && documentFlow) {
+      const rag = getRagService();
+      const nPre = rag.getDocAgentRetrievalCount(filterMetadata);
+      let searchResults;
+      try {
+        searchResults = await rag.search(query, nPre, filterMetadata);
+      } catch (e) {
+        logger.error(`Document flow search error: ${e.message}`);
+        return res.status(500).json({ error: `Search error: ${e.message}`, flow: 'document' });
+      }
+      if (!searchResults?.length) {
+        return res.status(422).json({
+          error: 'INSUFFICIENT_EVIDENCE',
+          flow: 'document',
+          research_flow: 'document',
+          kernel_invoked: false,
+          state_machine: false,
+          sources: [],
+          query
+        });
+      }
+      const docResult = await rag.generateAnswer(query, nPre, filterMetadata, true, searchResults);
+      const rows = docResult.results || [];
+      const sources = buildAnswerSourcesFromRetrieval(rows, { previewLength: 100 });
+      if (SearchHistory && docResult.answer) {
+        try {
+          await SearchHistory.create({
+            user_id: userId,
+            username: user?.username ?? 'אורח',
+            question: query,
+            answer: docResult.answer
+          });
+        } catch (e) {
+          logger.warn(`Failed to save search history: ${e.message}`);
+        }
+      }
+      return res.json({
+        query,
+        flow: 'document',
+        research_flow: 'document',
+        kernel_invoked: false,
+        state_machine: false,
+        answer: docResult.answer ?? null,
+        results_count: docResult.results_count ?? rows.length,
+        results: rows,
+        sources,
+        context_sources: docResult.context_used ?? 0,
+        context: docResult.context || '',
+        error: docResult.error || null
+      });
+    }
+
     if (generateAnswer) {
       // Stage 1: session_id + stage required. Without valid session → no handling.
       if (!sessionId || String(sessionId).trim() === '') {
@@ -983,6 +1031,32 @@ async function handleMatriyaSearch(req, res) {
         });
       }
 
+      if (preGate.partialEvidence) {
+        await logDecisionAudit(
+          responseSessionId,
+          stage,
+          'partial_evidence',
+          null,
+          query,
+          {
+            session_id: responseSessionId,
+            stage,
+            status: 'PARTIAL_EVIDENCE',
+            what_exists: preGate.partialEvidence.what_exists,
+            what_missing: preGate.partialEvidence.what_missing,
+            gap_type: preGate.partialEvidence.gap_type
+          },
+          null,
+          { complexity_context: complexityContext }
+        );
+        return res.status(200).json({
+          ...preGate.partialEvidence,
+          session_id: responseSessionId,
+          research_stage: stage,
+          ...(enforcement && { matriya_enforcement: enforcement })
+        });
+      }
+
       const kernel = getKernel();
       const kernelResult = await kernel.processUserIntent(query, null, null, filterMetadata, {
         prefetchedSearchResults: preSearchResults
@@ -993,13 +1067,9 @@ async function handleMatriyaSearch(req, res) {
         if (noAnswerFromRag) {
           await logAudit(responseSessionId, stage, 'no_results', query);
           const noAns = RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
-          const src = evidenceFromSearchResults(
-            kernelResult.search_results || [],
-            undefined,
-            undefined,
-            query,
-            noAns
-          );
+          const src = buildAnswerSourcesFromRetrieval(kernelResult.search_results || [], {
+            previewLength: 100
+          });
           return res.json(
             attachKernelV16ToPayload(
               {
@@ -1073,13 +1143,9 @@ async function handleMatriyaSearch(req, res) {
         }
       }
 
-      const evidenceSources = evidenceFromSearchResults(
-        kernelResult.search_results || [],
-        undefined,
-        undefined,
-        query,
-        answer
-      );
+      const evidenceSources = buildAnswerSourcesFromRetrieval(kernelResult.search_results || [], {
+        previewLength: 100
+      });
       return res.json(
         attachKernelV16ToPayload(
           {
@@ -1114,7 +1180,7 @@ async function handleMatriyaSearch(req, res) {
         results_count: results.length,
         results: results,
         answer: null,
-        sources: evidenceFromSearchResults(results, undefined, undefined, query, null)
+        sources: buildAnswerSourcesFromRetrieval(results, { previewLength: 100 })
       });
     }
   } catch (e) {
