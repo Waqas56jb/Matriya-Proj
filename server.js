@@ -640,6 +640,16 @@ app.post("/ingest/directory", async (req, res) => {
   }
 });
 
+/** Logical path or basename ends with .xlsx / .xls */
+function isAskMatriyaSpreadsheetFilename(name) {
+  const base = String(name || '').split(/[/\\]/).filter(Boolean).pop() || '';
+  return /\.xlsx$/i.test(base) || /\.xls$/i.test(base);
+}
+
+/** Prepended under each spreadsheet file so the model treats TSV rows as real document content. */
+const ASK_MATRIYA_EXCEL_CONTEXT_PREAMBLE =
+  '[מקור: קובץ Excel — כל שורה היא שורת טבלה; תאים מופרדים בדרך כלל בטאב (TAB). יש לענות, לסכם ולנתח לפי השורות והעמודות למטה. אסור לטעון שאין מסמך או שאין מידע אם הטקסט למטה אינו ריק.]\n';
+
 /**
  * Ask Matriya: full indexed text (or first chunk fallback) into the chat prompt — not vector RAG retrieval.
  */
@@ -708,13 +718,17 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
 
   // Full-document context in the chat prompt (no vector / file_search RAG for this route).
   let fileContext = '';
+  let contextHasSpreadsheet = false;
   if (filenames.length > 0) {
     const rag = getRagService();
     for (const fn of filenames) {
       if (fileContext.length >= MAX_FILE_CONTEXT_CHARS) break;
       const text = await loadIndexedTextForAskMatriya(rag, fn);
       if (text) {
-        const chunk = `\n--- ${fn} ---\n${text}\n`;
+        const sheet = isAskMatriyaSpreadsheetFilename(fn);
+        if (sheet) contextHasSpreadsheet = true;
+        const pre = sheet ? ASK_MATRIYA_EXCEL_CONTEXT_PREAMBLE : '';
+        const chunk = `\n--- ${fn} ---\n${pre}${text}\n`;
         fileContext += fileContext.length + chunk.length <= MAX_FILE_CONTEXT_CHARS ? chunk : chunk.slice(0, MAX_FILE_CONTEXT_CHARS - fileContext.length);
       }
     }
@@ -725,7 +739,14 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
         tempPaths.push(f.path);
         const result = await docProcessor.processFile(f.path);
         if (result.success && result.text && fileContext.length < MAX_FILE_CONTEXT_CHARS) {
-          const chunk = `\n--- ${result.metadata?.filename || f.originalname} ---\n${result.text}\n`;
+          const logicalName = result.metadata?.filename || f.originalname;
+          const sheet =
+            isAskMatriyaSpreadsheetFilename(logicalName) ||
+            result.metadata?.file_type === '.xlsx' ||
+            result.metadata?.file_type === '.xls';
+          if (sheet) contextHasSpreadsheet = true;
+          const pre = sheet ? ASK_MATRIYA_EXCEL_CONTEXT_PREAMBLE : '';
+          const chunk = `\n--- ${logicalName} ---\n${pre}${result.text}\n`;
           fileContext += fileContext.length + chunk.length <= MAX_FILE_CONTEXT_CHARS ? chunk : chunk.slice(0, MAX_FILE_CONTEXT_CHARS - fileContext.length);
         }
       }
@@ -747,8 +768,13 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
     });
   }
 
+  const spreadsheetMode = contextHasSpreadsheet || /\[גיליון:/.test(fileContext);
+  const spreadsheetHint = spreadsheetMode
+    ? '\n\nSpreadsheets: Lines may be tab-separated rows from Excel; sheet titles may appear as [גיליון: …]. This tabular text is valid document content. You MUST answer and summarize from it (columns, headers, values). Never claim you lack the document or cannot summarize when the Documents section above contains non-empty spreadsheet text—instead, describe sheets, columns, and data in Hebrew.\n'
+    : '';
+
   const systemContent = fileContext
-    ? `The user selected the following documents. The text below is the full extracted content (as stored for search indexing). Answer the user's question in Hebrew (עברית) only. Do not use Arabic.\n\nUse this content as your source. Do not invent facts that are not supported by the text. If the question is outside what the documents cover, say so briefly in natural Hebrew (you are not required to use any fixed refusal phrase).\n\nDocuments:\n${fileContext}`
+    ? `The user selected the following documents. The text below is the full extracted content (as stored for search indexing). Answer the user's question in Hebrew (עברית) only. Do not use Arabic.\n\nUse this content as your source. Do not invent facts that are not supported by the text. If the question is outside what the documents cover, say so briefly in natural Hebrew (you are not required to use any fixed refusal phrase).${spreadsheetHint}\nDocuments:\n${fileContext}`
     : "You are a helpful research assistant. You must respond in Hebrew (עברית) only. Do not use Arabic.";
   const MAX_MESSAGE_CONTENT_CHARS = 4000;
   const hasFileContext = String(fileContext || '').trim().length > 0;
@@ -771,7 +797,7 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
       {
         model: "gpt-4o-mini",
         messages,
-        max_tokens: 1024,
+        max_tokens: spreadsheetMode ? 2048 : 1024,
         temperature: 0.7
       },
       {
