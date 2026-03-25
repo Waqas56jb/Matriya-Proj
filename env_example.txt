@@ -43,6 +43,14 @@ CHUNK_OVERLAP=100
 # Post-retrieval floor: chunks below this similarity are dropped before gates / sources (default 0.7).
 # MATRIYA_RETRIEVAL_SIMILARITY_THRESHOLD=0.7
 # MATRIYA_MAX_ATTRIBUTION_SOURCES=3  # Research flow: top_k sources (חוק קרנל)
+#
+# Domain (query–chunk lexical overlap). Irrelevant snippets/rows are dropped before generation.
+# MATRIYA_DOMAIN_MIN_QUERY_OVERLAP=2   # Min overlap score (0 = off). Empty query tokens → no filter.
+#
+# Conclusion gate before local LLM / before trusting Ask Matriya evidence (after similarity + domain).
+# MATRIYA_GENERATION_MIN_CHUNKS=1
+# MATRIYA_GENERATION_MIN_TOPK_SIMILARITY_SUM=0  # e.g. 1.8 requires sum of top-3 similarities ≥ 1.8
+# MATRIYA_GENERATION_TOPK_SUM_K=3
 # Pre-LLM research gate (Ask MATRIYA / מחקר)
 # MATRIYA_PRE_LLM_MIN_SIMILARITY=0.75
 # MATRIYA_PRE_LLM_MIN_CHUNKS=2

@@ -12,6 +12,9 @@ import { runLoop } from './researchLoop.js';
 import { evaluateRisks } from './riskOracle.js';
 import { getFilWarnings } from './filLayer.js';
 import logger from './logger.js';
+import settings from './config.js';
+import { onMatriyaRagFileDeleted } from './lib/matriyaOpenAiSync.js';
+import { scheduleMatriyaOpenAiSyncAfterIngest } from './lib/matriyaOpenAiAutoSync.js';
 
 const router = express.Router();
 
@@ -70,11 +73,17 @@ router.delete("/files/:filename", verifyAdmin, async (req, res) => {
   try {
     const { filename } = req.params;
     const ragService = getRagService();
-    // Delete documents with matching filename in metadata
-    const result = await ragService.vectorStore.deleteDocuments(
-      null,
-      { filename: filename }
-    );
+    // Delete documents with matching filename in metadata (path / basename / LIKE — same as search)
+    const result = await ragService.vectorStore.deleteDocuments(null, { filename });
+    const apiKey = (settings.OPENAI_API_KEY || '').trim();
+    if (apiKey) {
+      await onMatriyaRagFileDeleted(ragService, {
+        openaiApiKey: apiKey,
+        openaiBase: settings.OPENAI_API_BASE,
+        onLog: (m) => logger.info(`[OpenAI prune admin delete] ${m}`)
+      });
+    }
+    scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'admin/delete-file');
     return res.json({
       success: true,
       message: `File '${filename}' deleted successfully`,

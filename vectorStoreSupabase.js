@@ -716,14 +716,32 @@ class SupabaseVectorStore {
         );
         deletedCount = result.rowCount;
       } else if (filterMetadata) {
-        // Delete by metadata filter
+        // Delete by metadata filter (filename: same rules as search — path, basename, LIKE)
         const conditions = [];
         const params = [];
         let paramIndex = 1;
         for (const [key, value] of Object.entries(filterMetadata)) {
-          conditions.push(`metadata->>'${key}' = $${paramIndex}`);
-          params.push(value);
-          paramIndex++;
+          if (key === 'filenames' && Array.isArray(value) && value.length > 0) {
+            conditions.push(`metadata->>'filename' = ANY($${paramIndex}::text[])`);
+            params.push(value);
+            paramIndex++;
+          } else if (key === 'filename' && typeof value === 'string' && value) {
+            const escaped = value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+            const basename = path.basename(value);
+            const escapedBasename = basename.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+            conditions.push(
+              `(metadata->>'filename' = $${paramIndex} OR metadata->>'filename' LIKE $${paramIndex + 1} OR metadata->>'filename' = $${paramIndex + 2} OR metadata->>'filename' LIKE $${paramIndex + 3})`
+            );
+            params.push(value, '%' + escaped, basename, '%' + escapedBasename);
+            paramIndex += 4;
+          } else if (key !== 'filenames' && value != null) {
+            conditions.push(`metadata->>'${key}' = $${paramIndex}`);
+            params.push(value);
+            paramIndex++;
+          }
+        }
+        if (!conditions.length) {
+          return { deleted_count: 0, error: 'No valid filter conditions' };
         }
         const whereClause = "WHERE " + conditions.join(" AND ");
 

@@ -19,7 +19,8 @@
     "check:attribution-document-flow": "node scripts/check-attribution-and-document-flow.js",
     "test:ask-matriya-david": "node scripts/run-ask-matriya-david-tests.mjs",
     "verify:david-three": "node scripts/print-and-verify-david-three-tests.mjs",
-    "check:retrieval-threshold": "node scripts/check-retrieval-similarity-filter.js"
+    "check:retrieval-threshold": "node scripts/check-retrieval-similarity-filter.js",
+    "check:answer-binding": "node scripts/check-answer-binding-filter.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

@@ -19,6 +19,11 @@ import {
   selectRankedSnippetList
 } from './lib/openaiFileSearchMatriya.js';
 import { hasFileSearchEvidence, hasVectorSearchEvidence } from './lib/ragEvidenceFailSafe.js';
+import {
+  filterSnippetsByQueryDomain,
+  filterRetrievalRowsByQueryDomain,
+  evaluateConclusionBeforeGeneration
+} from './lib/domainAndGenerationGate.js';
 
 class RAGService {
   /**Main service for RAG operations*/
@@ -397,7 +402,8 @@ class RAGService {
           forContextOnly: !useLlm,
           catalogFilenames
         });
-        if (!hasFileSearchEvidence(snippets)) {
+        const domainSnippets = filterSnippetsByQueryDomain(query, snippets);
+        if (!hasFileSearchEvidence(domainSnippets)) {
           return {
             query,
             results: [],
@@ -408,7 +414,20 @@ class RAGService {
             error: 'No relevant documents found'
           };
         }
-        const mapped = this._snippetsToSearchResults(snippets, nResults, query, answerText || '');
+        const mapped = this._snippetsToSearchResults(domainSnippets, nResults, query, answerText || '');
+        const genGate = evaluateConclusionBeforeGeneration(query, mapped);
+        if (!genGate.ok) {
+          return {
+            query,
+            results: [],
+            results_count: 0,
+            answer: null,
+            context_used: 0,
+            context: '',
+            error: genGate.code || 'INSUFFICIENT_EVIDENCE',
+            generation_blocked: true
+          };
+        }
         const contextParts = [];
         for (let i = 0; i < Math.min(mapped.length, nResults); i++) {
           const result = mapped[i];
@@ -461,7 +480,36 @@ class RAGService {
         error: 'No relevant documents found'
       };
     }
-    
+
+    const domainRows = filterRetrievalRowsByQueryDomain(query, searchResults);
+    if (!domainRows.length || !hasVectorSearchEvidence(domainRows)) {
+      return {
+        query: query,
+        results: [],
+        results_count: 0,
+        answer: null,
+        context_used: 0,
+        error: 'No relevant documents found',
+        domain_filtered: true
+      };
+    }
+
+    const genGateVec = evaluateConclusionBeforeGeneration(query, domainRows);
+    if (!genGateVec.ok) {
+      return {
+        query: query,
+        results: [],
+        results_count: 0,
+        answer: null,
+        context_used: 0,
+        context: '',
+        error: genGateVec.code || 'INSUFFICIENT_EVIDENCE',
+        generation_blocked: true
+      };
+    }
+
+    searchResults = domainRows;
+
     // Combine top results into context
     const contextParts = [];
     for (let i = 0; i < Math.min(searchResults.length, nResults); i++) {

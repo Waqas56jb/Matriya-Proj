@@ -48,7 +48,11 @@ import {
   useOpenAiFileSearchEnabled,
   getOpenAiApiBase
 } from './lib/openaiMatriyaConfig.js';
-import { syncMatriyaRagToOpenAI } from './lib/matriyaOpenAiSync.js';
+import { syncMatriyaRagToOpenAI, onMatriyaRagFileDeleted } from './lib/matriyaOpenAiSync.js';
+import {
+  filterRetrievalRowsByQueryDomain,
+  evaluateConclusionBeforeGeneration
+} from './lib/domainAndGenerationGate.js';
 import { scheduleMatriyaOpenAiSyncAfterIngest } from './lib/matriyaOpenAiAutoSync.js';
 import {
   extractOpenAiResponsesOutputText,
@@ -747,10 +751,31 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
       }
 
       const gateChunksAll = buildAskMatriyaGateChunksFromSnippets(snippetsRaw, message, reply);
-      const relevantChunks = filterChunksByRetrievalSimilarityThreshold(gateChunksAll);
+      let relevantChunks = filterChunksByRetrievalSimilarityThreshold(gateChunksAll);
       if (relevantChunks.length === 0) {
         return res.json({
           error: 'INSUFFICIENT_EVIDENCE',
+          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+          sources: [],
+          status: 'INSUFFICIENT_EVIDENCE'
+        });
+      }
+
+      relevantChunks = filterRetrievalRowsByQueryDomain(message, relevantChunks);
+      if (relevantChunks.length === 0) {
+        return res.json({
+          error: 'INSUFFICIENT_EVIDENCE',
+          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+          sources: [],
+          status: 'INSUFFICIENT_EVIDENCE',
+          code: 'DOMAIN_MISMATCH'
+        });
+      }
+
+      const conclusionGate = evaluateConclusionBeforeGeneration(message, relevantChunks);
+      if (!conclusionGate.ok) {
+        return res.json({
+          error: conclusionGate.code || 'INSUFFICIENT_EVIDENCE',
           reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
           sources: [],
           status: 'INSUFFICIENT_EVIDENCE'
@@ -1945,13 +1970,23 @@ app.get("/files/preview", async (req, res) => {
  * Returns:
  *   Deletion result
  */
-app.delete("/files", async (req, res) => {
+app.delete("/files", requireAuth, async (req, res) => {
   const { filename } = req.body || {};
   if (!filename || typeof filename !== "string" || !filename.trim()) {
     return res.status(400).json({ error: "filename is required in body" });
   }
   try {
-    const deleted = await getRagService().deleteDocumentsByFilename(filename.trim());
+    const rag = getRagService();
+    const deleted = await rag.deleteDocumentsByFilename(filename.trim());
+    const apiKey = (settings.OPENAI_API_KEY || '').trim();
+    if (apiKey) {
+      await onMatriyaRagFileDeleted(rag, {
+        openaiApiKey: apiKey,
+        openaiBase: settings.OPENAI_API_BASE,
+        onLog: (m) => logger.info(`[OpenAI prune after delete] ${m}`)
+      });
+    }
+    scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'delete/files');
     return res.json({ success: true, message: `Deleted ${deleted} chunks`, deleted_count: deleted });
   } catch (e) {
     logger.error(`Error deleting file: ${e.message}`);
