@@ -8,6 +8,7 @@ import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import logger from './logger.js';
 import { decodeTextFileBuffer } from './lib/textEncoding.js';
+import { formatExcelCellForRAG, excelCompositionRowSuffix } from './lib/excelPercentFormat.js';
 
 const require = createRequire(import.meta.url);
 const XLSX = require('xlsx');
@@ -126,28 +127,22 @@ class DocumentProcessor {
       const sheet = workbook.Sheets[sheetName];
       if (!sheet) continue;
       const safeName = sanitizeForUtf8(sheetName);
-      textParts.push(`[גיליון: ${safeName}]\n`);
+      textParts.push(
+        `[גיליון: ${safeName}] [אחוזים: מספרים בין 0 ל-1 (לא כולל) הם שברי רכיב — הוצגו כ×100, למשל 0.14528→14.53%. סכום שברים בשורת הרכב חייב ~100%; אחרת סימון שורתי.]\n`
+      );
 
-      let block = '';
+      let data;
       try {
-        block = XLSX.utils.sheet_to_csv(sheet, {
-          FS: '\t',
-          RS: '\n',
-          blankrows: false
-        });
+        data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
       } catch (e) {
-        logger.warn(`sheet_to_csv failed (${safeName}): ${e.message}`);
+        logger.warn(`sheet_to_json failed (${safeName}): ${e.message}`);
+        data = [];
       }
-      block = sanitizeForUtf8(String(block || '').trim());
-
-      if (block) {
-        textParts.push(block);
-      } else {
-        const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
-        for (const row of data) {
-          const rowText = row.map((cell) => sanitizeForUtf8(String(cell ?? ''))).join('\t');
-          if (rowText.trim()) textParts.push(rowText);
-        }
+      for (const row of data) {
+        const formatted = row.map((cell) => formatExcelCellForRAG(cell));
+        const suffix = excelCompositionRowSuffix(row);
+        const rowText = formatted.map((c) => sanitizeForUtf8(String(c ?? ''))).join('\t') + suffix;
+        if (rowText.trim()) textParts.push(rowText);
       }
       textParts.push('\n');
     }

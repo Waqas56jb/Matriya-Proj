@@ -648,7 +648,7 @@ function isAskMatriyaSpreadsheetFilename(name) {
 
 /** Prepended under each spreadsheet file so the model treats TSV rows as real document content. */
 const ASK_MATRIYA_EXCEL_CONTEXT_PREAMBLE =
-  '[מקור: קובץ Excel — כל שורה היא שורת טבלה; תאים מופרדים בדרך כלל בטאב (TAB). יש לענות, לסכם ולנתח לפי השורות והעמודות למטה. אסור לטעון שאין מסמך או שאין מידע אם הטקסט למטה אינו ריק.]\n';
+  '[מקור: קובץ Excel — שברי רכיב (0–1) כבר הומרו לאחוזים (×100) בטקסט המאונדקס. שורה עם סיומת «INVALID OUTPUT: row sum not 100%±0.1» = סכום השברים בשורה לא בטווח 100%±0.1. השתמש בערכי האחוזים כפי שמוצגים; אל תציג שוב כשבר עשרוני מעל התו %.]\n';
 
 /**
  * Ask Matriya: full indexed text (or first chunk fallback) into the chat prompt — not vector RAG retrieval.

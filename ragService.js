@@ -24,6 +24,7 @@ import {
   filterRetrievalRowsByQueryDomain,
   evaluateConclusionBeforeGeneration
 } from './lib/domainAndGenerationGate.js';
+import { detectStructuredDataInSnippets } from './lib/detectStructuredFormulationChunks.js';
 
 class RAGService {
   /**Main service for RAG operations*/
@@ -402,7 +403,10 @@ class RAGService {
           forContextOnly: !useLlm,
           catalogFilenames
         });
-        const domainSnippets = filterSnippetsByQueryDomain(query, snippets);
+        let domainSnippets = filterSnippetsByQueryDomain(query, snippets);
+        if (!hasFileSearchEvidence(domainSnippets) && detectStructuredDataInSnippets(snippets)) {
+          domainSnippets = snippets;
+        }
         if (!hasFileSearchEvidence(domainSnippets)) {
           return {
             query,

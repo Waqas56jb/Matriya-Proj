@@ -22,6 +22,7 @@ import {
 } from './kernelV16.js';
 import { detectGaps, getGapDetectionOptionsFromEnv } from './lib/researchEvidenceGaps.js';
 import { buildAnswerSourcesFromRetrieval } from './lib/answerAttribution.js';
+import { chunkLikeHasStructuredData } from './lib/detectStructuredFormulationChunks.js';
 
 const VALID_STAGES = new Set(STAGES_ORDER);
 
@@ -413,7 +414,9 @@ export function filterChunksByRetrievalSimilarityThreshold(chunks, threshold) {
       ? Math.min(1, Math.max(0, Number(threshold)))
       : getRetrievalSimilarityThreshold();
   const arr = Array.isArray(chunks) ? chunks : [];
-  return arr.filter((c) => retrievalSimilarityForGate(c) >= thr);
+  return arr.filter(
+    (c) => chunkLikeHasStructuredData(c) || retrievalSimilarityForGate(c) >= thr
+  );
 }
 
 const MIN_DOC_CHARS_EVIDENCE = 12;
@@ -457,7 +460,10 @@ function partitionPreLlmEvidence(searchResults) {
   const cfg = getPreLlmGateThresholds();
   const chunks = Array.isArray(searchResults) ? searchResults : [];
   const substantive = chunks.filter((c) => String(c.document ?? c.text ?? '').trim().length >= MIN_DOC_CHARS_EVIDENCE);
-  const strong = substantive.filter((c) => retrievalSimilarityForGate(c) > cfg.minSimilarity);
+  const strong = substantive.filter(
+    (c) =>
+      chunkLikeHasStructuredData(c) || retrievalSimilarityForGate(c) > cfg.minSimilarity
+  );
   return { cfg, chunks, substantive, strong };
 }
 
