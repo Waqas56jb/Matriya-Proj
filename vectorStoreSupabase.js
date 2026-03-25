@@ -415,10 +415,8 @@ class SupabaseVectorStore {
         `;
         await client.query(query, params);
       }
-      await client.query("COMMIT");
       logger.info(`Added ${texts.length} documents to vector store`);
     } catch (e) {
-      await client.query("ROLLBACK");
       logger.error(`Error adding documents: ${e.message}`);
       throw e;
     } finally {
@@ -754,11 +752,9 @@ class SupabaseVectorStore {
         return { deleted_count: 0, error: "Either ids or filter_metadata must be provided" };
       }
 
-      await client.query("COMMIT");
       logger.info(`Deleted ${deletedCount} documents`);
       return { deleted_count: deletedCount };
     } catch (e) {
-      await client.query("ROLLBACK");
       logger.error(`Error deleting documents: ${e.message}`);
       return { deleted_count: 0, error: e.message };
     } finally {
@@ -771,11 +767,9 @@ class SupabaseVectorStore {
     const client = await this.pool.connect();
     try {
       await client.query(`TRUNCATE TABLE ${this.collectionName}`);
-      await client.query("COMMIT");
       logger.info("Collection reset successfully");
       return true;
     } catch (e) {
-      await client.query("ROLLBACK");
       logger.error(`Error resetting collection: ${e.message}`);
       return false;
     } finally {

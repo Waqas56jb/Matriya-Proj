@@ -32,6 +32,13 @@ JWT_SECRET=your-random-secret-key-here
 # Collection Name (must match table created in supabase_setup_complete.sql)
 COLLECTION_NAME=rag_documents
 
+# Max characters per excerpt in "מקורות מהמסמכים" (default 1200, cap 16000)
+# MATRIYA_SOURCE_PREVIEW_CHARS=2000
+
+# Ask Matriya: drop file_search snippets not in pgvector index (stops ghost docs after delete).
+# Set to false only if OpenAI returns filenames that never match (debug).
+# MATRIYA_SNIPPET_INDEX_FILTER=false
+
 # File Upload Settings
 MAX_FILE_SIZE=52428800
 # Local: optional (default ./uploads). Vercel: leave UPLOAD_DIR unset or use a path under /tmp only (e.g. /tmp/matriya-uploads).

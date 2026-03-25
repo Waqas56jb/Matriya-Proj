@@ -48,7 +48,12 @@ import {
   useOpenAiFileSearchEnabled,
   getOpenAiApiBase
 } from './lib/openaiMatriyaConfig.js';
-import { syncMatriyaRagToOpenAI, onMatriyaRagFileDeleted } from './lib/matriyaOpenAiSync.js';
+import {
+  syncMatriyaRagToOpenAI,
+  onMatriyaRagFileDeleted,
+  removeMatriyaOpenAiFileByLogicalName
+} from './lib/matriyaOpenAiSync.js';
+import { filterFileSearchSnippetsToIndex } from './lib/filterFileSearchSnippetsToIndex.js';
 import {
   filterRetrievalRowsByQueryDomain,
   evaluateConclusionBeforeGeneration
@@ -737,7 +742,14 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
         filterMetadata,
         catalogAppendix
       });
-      const snippetsRaw = collectFileSearchSnippetsFromResponse(data);
+      let indexFilenames = [];
+      try {
+        indexFilenames = await getRagService().getAllFilenames();
+      } catch (_) {}
+      const snippetsRaw = filterFileSearchSnippetsToIndex(
+        collectFileSearchSnippetsFromResponse(data),
+        indexFilenames
+      );
       let reply = extractOpenAiResponsesOutputText(data);
       reply = sanitizeAnswerWhenNoSupportClaimed(reply || '') || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
 
@@ -845,7 +857,7 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
           text: String(c.document ?? c.text ?? '').trim()
         }));
       }
-      const sources = buildAnswerSourcesFromSnippets(sourceSnippets, { previewLength: 100 });
+      const sources = buildAnswerSourcesFromSnippets(sourceSnippets);
       return res.json({
         reply: reply || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
         sources
@@ -894,10 +906,15 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
     ? `The user has attached the following document content. Answer questions based on it. You must respond in Hebrew (עברית) only. Do not use Arabic.\n\nIf the documents do not contain enough information to answer, reply with this single sentence only — no bullet lists, no recommendations, no next steps: אין במערכת מידע תומך לשאלה זו.\n\nDocuments:\n${fileContext}`
     : "You are a helpful research assistant. You must respond in Hebrew (עברית) only. Do not use Arabic.";
   const MAX_MESSAGE_CONTENT_CHARS = 4000;
-  const trimmedHistory = (Array.isArray(history) ? history.slice(-MAX_HISTORY_MESSAGES) : []).map(m => ({
+  const hasFileContext = String(fileContext || '').trim().length > 0;
+  let trimmedHistory = (Array.isArray(history) ? history.slice(-MAX_HISTORY_MESSAGES) : []).map(m => ({
     ...m,
     content: typeof m.content === 'string' ? m.content.slice(0, MAX_MESSAGE_CONTENT_CHARS) : m.content
   }));
+  // No pasted docs / file_search failed: do not let prior assistant turns act as “live” document memory (e.g. after מחקר user deleted files).
+  if (!hasFileContext) {
+    trimmedHistory = trimmedHistory.filter((m) => m.role === 'user');
+  }
   const messages = [
     { role: "system", content: systemContent },
     ...trimmedHistory,
@@ -1016,7 +1033,7 @@ async function handleMatriyaSearch(req, res) {
       const docResult = await rag.generateAnswer(query, nPre, filterMetadata, true, relevantDoc);
       let rows = filterChunksByRetrievalSimilarityThreshold(docResult.results || []);
       rows = filterRetrievalRowsByAnswerBinding(rows, docResult.answer || '');
-      const sources = buildAnswerSourcesFromRetrieval(rows, { previewLength: 100 });
+        const sources = buildAnswerSourcesFromRetrieval(rows);
       if (SearchHistory && docResult.answer) {
         try {
           await SearchHistory.create({
@@ -1328,7 +1345,6 @@ async function handleMatriyaSearch(req, res) {
       const maxSources = getMaxAttributionSources();
       const topChunks = kernelFiltered.slice(0, maxSources);
       const evidenceSources = buildAnswerSourcesFromRetrieval(topChunks, {
-        previewLength: 100,
         maxItems: maxSources
       });
       return res.json(
@@ -1366,7 +1382,7 @@ async function handleMatriyaSearch(req, res) {
         results_count: relevantOnly.length,
         results: relevantOnly,
         answer: null,
-        sources: buildAnswerSourcesFromRetrieval(relevantOnly, { previewLength: 100 })
+        sources: buildAnswerSourcesFromRetrieval(relevantOnly)
       });
     }
   } catch (e) {
@@ -1977,14 +1993,24 @@ app.delete("/files", requireAuth, async (req, res) => {
   }
   try {
     const rag = getRagService();
-    const deleted = await rag.deleteDocumentsByFilename(filename.trim());
+    const trimmed = filename.trim();
+    const deleted = await rag.deleteDocumentsByFilename(trimmed);
     const apiKey = (settings.OPENAI_API_KEY || '').trim();
     if (apiKey) {
-      await onMatriyaRagFileDeleted(rag, {
+      try {
+        await removeMatriyaOpenAiFileByLogicalName(trimmed, {
+          openaiApiKey: apiKey,
+          openaiBase: settings.OPENAI_API_BASE,
+          onLog: (m) => logger.info(`[OpenAI delete file] ${m}`)
+        });
+      } catch (e) {
+        logger.error(`[OpenAI delete file] ${e.message}`);
+      }
+      void onMatriyaRagFileDeleted(rag, {
         openaiApiKey: apiKey,
         openaiBase: settings.OPENAI_API_BASE,
         onLog: (m) => logger.info(`[OpenAI prune after delete] ${m}`)
-      });
+      }).catch((err) => logger.error(`[OpenAI prune after delete] ${err.message}`));
     }
     scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'delete/files');
     return res.json({ success: true, message: `Deleted ${deleted} chunks`, deleted_count: deleted });

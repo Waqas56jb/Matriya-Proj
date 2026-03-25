@@ -471,7 +471,7 @@ function partialEvidenceBody(fields, chunksForSources) {
   return {
     ...fields,
     suggestion: fields.suggestion ?? null,
-    sources: buildAnswerSourcesFromRetrieval(chunksForSources, { previewLength: 100 })
+    sources: buildAnswerSourcesFromRetrieval(chunksForSources)
   };
 }
 

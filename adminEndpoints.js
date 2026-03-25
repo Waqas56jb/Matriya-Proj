@@ -13,7 +13,7 @@ import { evaluateRisks } from './riskOracle.js';
 import { getFilWarnings } from './filLayer.js';
 import logger from './logger.js';
 import settings from './config.js';
-import { onMatriyaRagFileDeleted } from './lib/matriyaOpenAiSync.js';
+import { onMatriyaRagFileDeleted, removeMatriyaOpenAiFileByLogicalName } from './lib/matriyaOpenAiSync.js';
 import { scheduleMatriyaOpenAiSyncAfterIngest } from './lib/matriyaOpenAiAutoSync.js';
 
 const router = express.Router();
@@ -71,17 +71,26 @@ router.get("/files", verifyAdmin, async (req, res) => {
  */
 router.delete("/files/:filename", verifyAdmin, async (req, res) => {
   try {
-    const { filename } = req.params;
+    const filename = decodeURIComponent(String(req.params.filename || ''));
     const ragService = getRagService();
     // Delete documents with matching filename in metadata (path / basename / LIKE — same as search)
     const result = await ragService.vectorStore.deleteDocuments(null, { filename });
     const apiKey = (settings.OPENAI_API_KEY || '').trim();
     if (apiKey) {
-      await onMatriyaRagFileDeleted(ragService, {
+      try {
+        await removeMatriyaOpenAiFileByLogicalName(filename, {
+          openaiApiKey: apiKey,
+          openaiBase: settings.OPENAI_API_BASE,
+          onLog: (m) => logger.info(`[OpenAI admin delete file] ${m}`)
+        });
+      } catch (e) {
+        logger.error(`[OpenAI admin delete file] ${e.message}`);
+      }
+      void onMatriyaRagFileDeleted(ragService, {
         openaiApiKey: apiKey,
         openaiBase: settings.OPENAI_API_BASE,
         onLog: (m) => logger.info(`[OpenAI prune admin delete] ${m}`)
-      });
+      }).catch((err) => logger.error(`[OpenAI prune admin delete] ${err.message}`));
     }
     scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'admin/delete-file');
     return res.json({
