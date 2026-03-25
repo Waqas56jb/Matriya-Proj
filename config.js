@@ -3,13 +3,28 @@
  */
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+const VERCEL_DEPLOY =
+  process.env.VERCEL === '1' || process.env.VERCEL === 'true' || Boolean(process.env.VERCEL_ENV);
+
+/** Multer temp files: must live under /tmp on Vercel (project dir is read-only). */
+function resolveUploadDir() {
+  if (VERCEL_DEPLOY) {
+    const fromEnv = (process.env.UPLOAD_DIR || '').trim();
+    if (fromEnv.startsWith('/tmp')) {
+      return fromEnv.replace(/\/$/, '') || '/tmp/matriya-uploads';
+    }
+    return '/tmp/matriya-uploads';
+  }
+  return (process.env.UPLOAD_DIR || './uploads').replace(/\/$/, '') || './uploads';
+}
 
 class Settings {
   constructor() {
@@ -20,9 +35,8 @@ class Settings {
     // Embedding Model (local)
     this.EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "sentence-transformers/all-MiniLM-L6-v2";
     
-    // Document Processing (Vercel: writable dir only under /tmp; aligns with vector-store id file)
-    this.UPLOAD_DIR =
-      process.env.UPLOAD_DIR || (process.env.VERCEL ? '/tmp/matriya-uploads' : './uploads');
+    // Document Processing — Vercel serverless: only /tmp is writable. Do not use ./uploads even if UPLOAD_DIR is copied from local .env.
+    this.UPLOAD_DIR = resolveUploadDir();
     this.MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024; // 50MB
     this.ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".doc", ".xlsx", ".xls"];
     
@@ -56,15 +70,13 @@ class Settings {
 // Create directories if they don't exist
 const settings = new Settings();
 
-// Only create uploads directory if not on Vercel (Vercel uses /tmp)
-if (!process.env.VERCEL) {
-  try {
-    if (!existsSync(settings.UPLOAD_DIR)) {
-      mkdirSync(settings.UPLOAD_DIR, { recursive: true });
-    }
-  } catch (e) {
-    // On Vercel, we'll use /tmp for uploads
+// Ensure upload dir exists (Vercel: /tmp/matriya-uploads — mkdir each cold start is cheap)
+try {
+  if (!existsSync(settings.UPLOAD_DIR)) {
+    mkdirSync(settings.UPLOAD_DIR, { recursive: true });
   }
+} catch (e) {
+  // Non-fatal; multer destination also mkdirs
 }
 
 export default settings;

@@ -32,9 +32,11 @@ JWT_SECRET=your-random-secret-key-here
 # Collection Name (must match table created in supabase_setup_complete.sql)
 COLLECTION_NAME=rag_documents
 
-# File Upload Settings (for Vercel, UPLOAD_DIR should be /tmp)
+# File Upload Settings
 MAX_FILE_SIZE=52428800
-UPLOAD_DIR=/tmp
+# Local: optional (default ./uploads). Vercel: leave UPLOAD_DIR unset or use a path under /tmp only (e.g. /tmp/matriya-uploads).
+# Setting UPLOAD_DIR=uploads on Vercel breaks ingest (read-only filesystem outside /tmp).
+# UPLOAD_DIR=/tmp/matriya-uploads
 
 # Chunking Settings
 CHUNK_SIZE=500
