@@ -14,6 +14,7 @@ class TextChunker {
     this.chunkOverlap = chunkOverlap;
   }
 
+  /** @param {object} [metadata] — when file is .xlsx/.xls, preserve row newlines for Ask Matriya / search. */
   chunkText(text, metadata, chunkSize = null, chunkOverlap = null) {
     /**
      * Split text into chunks
@@ -34,11 +35,9 @@ class TextChunker {
     const size = chunkSize || this.chunkSize;
     const overlap = chunkOverlap || this.chunkOverlap;
 
-    // Clean and normalize text
-    const cleanedText = this._cleanText(text);
+    const cleanedText = this._cleanText(text, metadata);
 
-    // Split by paragraphs first (better semantic boundaries)
-    const paragraphs = this._splitIntoParagraphs(cleanedText);
+    const paragraphs = this._splitIntoParagraphs(cleanedText, metadata);
 
     const chunks = [];
     let currentChunk = "";
@@ -89,12 +88,13 @@ class TextChunker {
 
     // If text is shorter than chunk_size, ensure we have at least one chunk
     if (chunks.length === 0 && text) {
+      const fallback = (cleanedText && cleanedText.trim()) || text.trim();
       chunks.push({
-        text: text,
+        text: fallback,
         metadata: {
           ...metadata,
           chunk_index: 0,
-          chunk_size: text.length
+          chunk_size: fallback.length
         }
       });
     }
@@ -102,18 +102,63 @@ class TextChunker {
     return chunks;
   }
 
-  _cleanText(text) {
-    /**Clean and normalize text*/
-    // Remove excessive whitespace
+  _isSpreadsheet(metadata) {
+    const ft = metadata?.file_type;
+    if (ft === '.xlsx' || ft === '.xls') return true;
+    const fn = String(metadata?.filename || '');
+    return /\.xlsx$/i.test(fn) || /\.xls$/i.test(fn);
+  }
+
+  _cleanText(text, metadata = null) {
+    /**Clean and normalize text. Spreadsheets: keep row breaks; only collapse horizontal whitespace per line.*/
+    if (this._isSpreadsheet(metadata)) {
+      return text
+        .split(/\r?\n/)
+        .map((line) => line.replace(/[\t ]+/g, ' ').trim())
+        .filter(Boolean)
+        .join('\n')
+        .replace(/\n{4,}/g, '\n\n\n')
+        .trim();
+    }
     let cleaned = text.replace(/\s+/g, ' ');
-    // Remove excessive newlines
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
     return cleaned.trim();
   }
 
-  _splitIntoParagraphs(text) {
+  _splitIntoParagraphs(text, metadata = null) {
     /**Split text into paragraphs and sentences*/
-    // First split by double newlines (paragraphs)
+    if (this._isSpreadsheet(metadata)) {
+      const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+      if (lines.length === 0) return [];
+      const groups = [];
+      let buf = '';
+      for (const line of lines) {
+        if (line.length > this.chunkSize) {
+          if (buf) {
+            groups.push(buf);
+            buf = '';
+          }
+          let start = 0;
+          while (start < line.length) {
+            const end = Math.min(start + this.chunkSize, line.length);
+            groups.push(line.slice(start, end));
+            start += this.chunkSize - this.chunkOverlap;
+            if (start >= line.length) break;
+          }
+          continue;
+        }
+        const next = buf ? `${buf}\n${line}` : line;
+        if (next.length > this.chunkSize && buf) {
+          groups.push(buf);
+          buf = line;
+        } else {
+          buf = next;
+        }
+      }
+      if (buf) groups.push(buf);
+      return groups;
+    }
+
     const paragraphs = text.split(/\n\s*\n/);
 
     const result = [];

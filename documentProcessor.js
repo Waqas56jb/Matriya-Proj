@@ -112,10 +112,10 @@ class DocumentProcessor {
   }
 
   async _processExcel(filePath) {
-    /**Extract text from Excel file (all sheets). Sanitize cell/sheet strings so no null bytes (0x00) reach the vector store.*/
+    /**Extract text from Excel file (all sheets). TSV-style rows + sheet headers for RAG and Ask Matriya readability.*/
     const buf = fs.readFileSync(filePath);
     const ext = path.extname(filePath).toLowerCase();
-    const readOpts = { type: 'buffer' };
+    const readOpts = { type: 'buffer', cellDates: true };
     if (ext === '.xls') {
       readOpts.codepage = 1255;
     }
@@ -124,12 +124,29 @@ class DocumentProcessor {
 
     for (const sheetName of workbook.SheetNames || []) {
       const sheet = workbook.Sheets[sheetName];
-      textParts.push(`Sheet: ${sanitizeForUtf8(sheetName)}\n`);
-      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-      for (const row of data) {
-        const rowText = row.map(cell => sanitizeForUtf8(String(cell ?? ''))).join('\t');
-        if (rowText.trim()) {
-          textParts.push(rowText);
+      if (!sheet) continue;
+      const safeName = sanitizeForUtf8(sheetName);
+      textParts.push(`[גיליון: ${safeName}]\n`);
+
+      let block = '';
+      try {
+        block = XLSX.utils.sheet_to_csv(sheet, {
+          FS: '\t',
+          RS: '\n',
+          blankrows: false
+        });
+      } catch (e) {
+        logger.warn(`sheet_to_csv failed (${safeName}): ${e.message}`);
+      }
+      block = sanitizeForUtf8(String(block || '').trim());
+
+      if (block) {
+        textParts.push(block);
+      } else {
+        const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+        for (const row of data) {
+          const rowText = row.map((cell) => sanitizeForUtf8(String(cell ?? ''))).join('\t');
+          if (rowText.trim()) textParts.push(rowText);
         }
       }
       textParts.push('\n');

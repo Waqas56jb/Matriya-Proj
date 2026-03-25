@@ -654,7 +654,9 @@ class SupabaseVectorStore {
         `SELECT document, (metadata->>'chunk_index')::int AS chunk_index
          FROM ${this.collectionName}
          WHERE metadata->>'filename' = $1
-         ORDER BY (metadata->>'chunk_index')::int ASC NULLS LAST`,
+         ORDER BY (metadata->>'chunk_index')::int ASC NULLS LAST,
+                  created_at ASC NULLS LAST,
+                  id ASC`,
         [filename]
       );
       if (result.rows.length === 0) return null;

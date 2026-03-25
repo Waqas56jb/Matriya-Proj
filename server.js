@@ -24,8 +24,6 @@ import {
   HARD_STOP_MESSAGE,
   stripSuggestions,
   evaluatePreLlmResearchGate,
-  evaluatePreLlmEvidencePhase,
-  getStrongChunksForAttribution,
   getModelVersionHash,
   filterChunksByRetrievalSimilarityThreshold,
   getMaxAttributionSources
@@ -53,39 +51,18 @@ import {
   onMatriyaRagFileDeleted,
   removeMatriyaOpenAiFileByLogicalName
 } from './lib/matriyaOpenAiSync.js';
-import { filterFileSearchSnippetsToIndex } from './lib/filterFileSearchSnippetsToIndex.js';
-import {
-  filterRetrievalRowsByQueryDomain,
-  evaluateConclusionBeforeGeneration
-} from './lib/domainAndGenerationGate.js';
 import { scheduleMatriyaOpenAiSyncAfterIngest } from './lib/matriyaOpenAiAutoSync.js';
+import { buildAnswerSourcesFromRetrieval } from './lib/answerAttribution.js';
 import {
-  openAiResponsesFileSearch,
-  buildMatriyaCatalogAppendix,
-  MATRIYA_FILE_SEARCH_INSTRUCTIONS_ANSWER,
-  collectFileSearchSnippetsFromResponse,
-  buildAskMatriyaGateChunksFromSnippets
-} from './lib/openaiFileSearchMatriya.js';
-import { buildAnswerSourcesFromRetrieval, buildAnswerSourcesFromSnippets } from './lib/answerAttribution.js';
-import {
-  filterRetrievalRowsByAnswerBinding,
-  filterSnippetsByAnswerBinding,
-  getAnswerBindingRequirements
+  filterRetrievalRowsByAnswerBinding
 } from './lib/answerSourceBindingFilter.js';
 import {
   tryDavidAcceptanceFixture,
   isDavidFormulationInsufficientQuestion,
-  davidInsufficientEvidencePayload,
-  tryDavidLiveAppPerMelPartial,
-  tryDavidLiveExpansionRatioAnswer
+  davidInsufficientEvidencePayload
 } from './lib/davidAskMatriyaAcceptance.js';
 import { repairUtf8MisdecodedAsLatin1 } from './lib/textEncoding.js';
-import {
-  hasFileSearchEvidence,
-  sanitizeAnswerWhenNoSupportClaimed,
-  RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
-  isRagInsufficientMessage
-} from './lib/ragEvidenceFailSafe.js';
+import { RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE } from './lib/ragEvidenceFailSafe.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -163,121 +140,6 @@ function getKernel() {
     logger.info("Kernel initialized");
   }
   return kernel;
-}
-
-/**
- * When OpenAI file_search has nothing yet (e.g. new upload, cloud still indexing), answer from pgvector + LLM.
- * Set MATRIYA_ASK_DISABLE_LOCAL_FALLBACK=1 to turn off.
- */
-async function tryAskMatriyaLocalPgvector(message, filenames) {
-  const off = process.env.MATRIYA_ASK_DISABLE_LOCAL_FALLBACK;
-  if (off === '1' || off === 'true') return null;
-  const msg = String(message || '').trim();
-  if (!msg) return null;
-  let rag;
-  try {
-    rag = getRagService();
-  } catch (_) {
-    return null;
-  }
-  const filterMetadata = filenames.length > 0 ? { filenames } : null;
-  const n = Math.max(8, Math.min(24, parseInt(process.env.MATRIYA_ASK_LOCAL_FALLBACK_N || '16', 10) || 16));
-  let rows;
-  try {
-    rows = await rag.vectorStore.search(msg, n, filterMetadata);
-  } catch (e) {
-    logger.warn(`[ask-matriya] local pgvector search: ${e.message}`);
-    return null;
-  }
-  if (!rows?.length) return null;
-  let chunks = filterChunksByRetrievalSimilarityThreshold(rows);
-  if (!chunks.length) return null;
-  chunks = filterRetrievalRowsByQueryDomain(msg, chunks);
-  if (!chunks.length) return null;
-  const conclusionGate = evaluateConclusionBeforeGeneration(msg, chunks);
-  if (!conclusionGate.ok) return null;
-  const parts = chunks.slice(0, 10).map((r, i) => {
-    const fn = r.metadata?.filename || 'Unknown';
-    return `קטע ${i + 1} (מקור: ${fn}):\n${String(r.document || '').trim().slice(0, 7000)}`;
-  });
-  const context = parts.join('\n\n---\n\n');
-  const systemContent =
-    'ענו בעברית בלבד. השתמשו אך ורק בקטעים הבאים מהמאגר המקומי. אסור להמציא מידע שלא מופיע בהם. אם אין בהם מידע מספיק, השיבו במשפט אחד בדיוק: אין במערכת מידע תומך לשאלה זו.\n\nקטעים:\n' +
-    context;
-  const openaiKey = (settings.OPENAI_API_KEY || '').trim();
-  if (!openaiKey) return null;
-  try {
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemContent },
-          { role: 'user', content: msg }
-        ],
-        max_tokens: 1024,
-        temperature: 0.3
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${openaiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 90000
-      }
-    );
-    let reply = response.data?.choices?.[0]?.message?.content?.trim() || '';
-    reply = sanitizeAnswerWhenNoSupportClaimed(reply) || reply;
-    const maxSrc = Math.max(1, Math.min(8, parseInt(process.env.MATRIYA_ASK_MAX_SOURCES || '8', 10) || 8));
-    const sourceRows = getStrongChunksForAttribution(chunks).slice(0, maxSrc);
-    const sources = buildAnswerSourcesFromRetrieval(sourceRows);
-    logger.info('[ask-matriya] used local pgvector fallback (cloud file_search had no snippets)');
-    return { reply: reply || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE, sources, ask_path: 'local_pgvector' };
-  } catch (e) {
-    logger.warn(`[ask-matriya] local pgvector LLM: ${e.message}`);
-    return null;
-  }
-}
-
-/**
- * Final user-facing answer for Ask Matriya cloud path: generated only from gated retrieval rows
- * (never from the first Responses API message, which may reflect stale vector-store content).
- */
-async function matriyaGroundedReplyFromRelevantChunks(fullUserPrompt, relevantChunks) {
-  const key = (settings.OPENAI_API_KEY || '').trim();
-  if (!key) return '';
-  const chunks = Array.isArray(relevantChunks) ? relevantChunks : [];
-  const parts = chunks.slice(0, 10).map((r, i) => {
-    const fn = r.metadata?.filename || 'Unknown';
-    return `קטע ${i + 1} (מקור: ${fn}):\n${String(r.document || r.text || '').trim().slice(0, 7000)}`;
-  });
-  const context = parts.join('\n\n---\n\n');
-  if (!context.trim()) return '';
-  const systemContent =
-    'ענו בעברית בלבד. להלן ציטוטים בלבד מהמסמכים המורשים (המופיעים בטבלת המסמכים / שנבחרו בממשק). ' +
-    'אסור להשתמש בידע ממסמכים שאינם מופיעים בציטוטים למטה, מזיכרון הדרכה, או מכל מקור אחר. ' +
-    'אסור להמציא מידע שלא מופיע בציטוטים. אם אין בציטוטים מידע מספיק, השיבו במשפט אחד בדיוק: אין במערכת מידע תומך לשאלה זו.\n\nציטוטים:\n' +
-    context;
-  const response = await axios.post(
-    `${getOpenAiApiBase()}/chat/completions`,
-    {
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemContent },
-        { role: 'user', content: String(fullUserPrompt || '').trim().slice(0, 12000) }
-      ],
-      max_tokens: 1024,
-      temperature: 0.2
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 90000
-    }
-  );
-  return (response.data?.choices?.[0]?.message?.content || '').trim();
 }
 
 function researchKernelOptsFromRequest(req) {
@@ -779,7 +641,19 @@ app.post("/ingest/directory", async (req, res) => {
 });
 
 /**
+ * Ask Matriya: full indexed text (or first chunk fallback) into the chat prompt — not vector RAG retrieval.
+ */
+async function loadIndexedTextForAskMatriya(rag, filename) {
+  let text = await rag.getFullTextForFile(filename);
+  if (String(text || '').trim()) return text;
+  const first = await rag.getFirstChunkForFile(filename);
+  const t = first && typeof first.text === 'string' ? first.text : '';
+  return String(t || '').trim() || null;
+}
+
+/**
  * Ask Matriya: chat with AI about selected files (OpenAI).
+ * Injects full extracted text (capped) into the system message — not retrieval / file_search RAG.
  * Body: JSON { message, history?, filenames? } for system files, or multipart (message, history, files) for uploads.
  */
 const docProcessor = new DocumentProcessor();
@@ -818,6 +692,12 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
     if (typeof f === 'string') try { const a = JSON.parse(f); return Array.isArray(a) ? a.filter(x => typeof x === 'string' && x.trim()) : []; } catch (_) { return []; }
     return [];
   })();
+  if (filenames.length === 0 && files.length === 0) {
+    return res.status(400).json({
+      error: 'יש לבחור לפחות מסמך אחד או להעלות קובץ.',
+      code: 'NO_DOCUMENTS_SELECTED'
+    });
+  }
   const MAX_FILE_CONTEXT_CHARS = 80000;
   const MAX_HISTORY_MESSAGES = 20;
 
@@ -826,192 +706,13 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
     return res.status(503).json({ error: "OpenAI API key not configured. Set OPENAI_API_KEY in .env." });
   }
 
-  await hydrateMatriyaOpenAiVectorStoreId();
-
-  const buildAskInput = () => {
-    const MAX_MESSAGE_CONTENT_CHARS = 4000;
-    const trimmedHistory = (Array.isArray(history) ? history.slice(-MAX_HISTORY_MESSAGES) : []).map(m => ({
-      ...m,
-      content: typeof m.content === 'string' ? m.content.slice(0, MAX_MESSAGE_CONTENT_CHARS) : m.content
-    }));
-    const historyLines = trimmedHistory
-      .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : ''}`)
-      .join('\n');
-    return historyLines ? `${historyLines}\nuser: ${message}` : message;
-  };
-
-  // Prefer vector file_search whenever cloud RAG is on: evidence = retrieved snippets only (not whole files).
-  const canTryCloudFileSearch =
-    files.length === 0 && useOpenAiFileSearchEnabled() && Boolean(getMatriyaOpenAiVectorStoreId());
-
-  if (canTryCloudFileSearch) {
-    let indexFilenames = [];
-    try {
-      indexFilenames = await getRagService().getAllFilenames();
-    } catch (_) {}
-    const idxSet = new Set(indexFilenames);
-    const clientListed = filenames.length > 0;
-    const allowedFilenames = clientListed
-      ? filenames.filter((f) => idxSet.has(f))
-      : indexFilenames.slice();
-
-    if (allowedFilenames.length === 0) {
-      return res.json({
-        error: 'INSUFFICIENT_EVIDENCE',
-        reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
-        sources: [],
-        status: 'INSUFFICIENT_EVIDENCE',
-        code: 'NO_ALLOWED_DOCUMENTS'
-      });
-    }
-
-    try {
-      const catalogAppendix = buildMatriyaCatalogAppendix(allowedFilenames);
-      const filterMetadata = { filenames: allowedFilenames };
-      const data = await openAiResponsesFileSearch({
-        query: buildAskInput(),
-        instructions: MATRIYA_FILE_SEARCH_INSTRUCTIONS_ANSWER,
-        maxNumResults: 24,
-        filterMetadata,
-        catalogAppendix
-      });
-      const snippetsRaw = filterFileSearchSnippetsToIndex(
-        collectFileSearchSnippetsFromResponse(data),
-        allowedFilenames
-      );
-
-      if (!hasFileSearchEvidence(snippetsRaw)) {
-        const localAns = await tryAskMatriyaLocalPgvector(message, allowedFilenames);
-        if (localAns) {
-          return res.json(localAns);
-        }
-        return res.json({
-          error: 'INSUFFICIENT_EVIDENCE',
-          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
-          sources: [],
-          status: 'INSUFFICIENT_EVIDENCE'
-        });
-      }
-
-      const gateChunksAll = buildAskMatriyaGateChunksFromSnippets(snippetsRaw, message, '');
-      let relevantChunks = filterChunksByRetrievalSimilarityThreshold(gateChunksAll);
-      if (relevantChunks.length === 0) {
-        return res.json({
-          error: 'INSUFFICIENT_EVIDENCE',
-          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
-          sources: [],
-          status: 'INSUFFICIENT_EVIDENCE'
-        });
-      }
-
-      relevantChunks = filterRetrievalRowsByQueryDomain(message, relevantChunks);
-      if (relevantChunks.length === 0) {
-        return res.json({
-          error: 'INSUFFICIENT_EVIDENCE',
-          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
-          sources: [],
-          status: 'INSUFFICIENT_EVIDENCE',
-          code: 'DOMAIN_MISMATCH'
-        });
-      }
-
-      const conclusionGate = evaluateConclusionBeforeGeneration(message, relevantChunks);
-      if (!conclusionGate.ok) {
-        return res.json({
-          error: conclusionGate.code || 'INSUFFICIENT_EVIDENCE',
-          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
-          sources: [],
-          status: 'INSUFFICIENT_EVIDENCE'
-        });
-      }
-
-      const liveAppPerMel = tryDavidLiveAppPerMelPartial(message, relevantChunks);
-      if (liveAppPerMel) {
-        return res.json(liveAppPerMel);
-      }
-
-      const snippetsAboveThreshold = relevantChunks.map((c) => ({
-        filename: c.metadata?.filename || 'Unknown',
-        text: String(c.document ?? c.text ?? '').trim()
-      }));
-      const liveExpansion = tryDavidLiveExpansionRatioAnswer(message, snippetsAboveThreshold);
-      if (liveExpansion) {
-        return res.json(liveExpansion);
-      }
-
-      const phase = evaluatePreLlmEvidencePhase(relevantChunks);
-      if (phase.outcome === 'deny') {
-        return res.json({
-          error: phase.code || 'INSUFFICIENT_EVIDENCE',
-          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
-          sources: [],
-          status: 'INSUFFICIENT_EVIDENCE',
-          code: phase.code
-        });
-      }
-
-      if (phase.outcome === 'partial') {
-        const { sources: _partialSources, ...partialRest } = phase.body;
-        return res.json({
-          reply: null,
-          answer_possible: false,
-          sources: [],
-          ...partialRest
-        });
-      }
-
-      let reply = '';
-      try {
-        reply = await matriyaGroundedReplyFromRelevantChunks(buildAskInput(), relevantChunks);
-      } catch (e) {
-        logger.warn(`[ask-matriya] grounded reply failed: ${e.message}`);
-      }
-      reply = sanitizeAnswerWhenNoSupportClaimed(reply || '') || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
-
-      if (isRagInsufficientMessage(reply)) {
-        return res.json({
-          error: 'INSUFFICIENT_EVIDENCE',
-          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
-          sources: [],
-          status: 'INSUFFICIENT_EVIDENCE'
-        });
-      }
-
-      const documentSourceQuestion = /מאיזה\s+מסמך|מאיזה\s+קובץ|מאיזה\s+דוח|איזה\s+מסמך/i.test(message);
-      const maxAttributionSources = documentSourceQuestion
-        ? 1
-        : Math.max(1, Math.min(16, parseInt(process.env.MATRIYA_ASK_MAX_SOURCES || '8', 10) || 8));
-      const allRelevantSnippets = relevantChunks.map((c) => ({
-        filename: c.metadata?.filename || 'Unknown',
-        text: String(c.document ?? c.text ?? '').trim()
-      }));
-      const bindReqs = getAnswerBindingRequirements(reply);
-      let sourceSnippets;
-      if (bindReqs && bindReqs.length > 0) {
-        sourceSnippets = filterSnippetsByAnswerBinding(allRelevantSnippets, reply).slice(0, maxAttributionSources);
-      } else {
-        const strong = getStrongChunksForAttribution(relevantChunks).slice(0, maxAttributionSources);
-        sourceSnippets = strong.map((c) => ({
-          filename: c.metadata?.filename || 'Unknown',
-          text: String(c.document ?? c.text ?? '').trim()
-        }));
-      }
-      const sources = buildAnswerSourcesFromSnippets(sourceSnippets);
-      return res.json({
-        reply: reply || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
-        sources
-      });
-    } catch (e) {
-      logger.warn(`Ask Matriya file_search failed, falling back to injected document text: ${e.message}`);
-    }
-  }
-
+  // Full-document context in the chat prompt (no vector / file_search RAG for this route).
   let fileContext = '';
   if (filenames.length > 0) {
     const rag = getRagService();
     for (const fn of filenames) {
       if (fileContext.length >= MAX_FILE_CONTEXT_CHARS) break;
-      const text = await rag.getFullTextForFile(fn);
+      const text = await loadIndexedTextForAskMatriya(rag, fn);
       if (text) {
         const chunk = `\n--- ${fn} ---\n${text}\n`;
         fileContext += fileContext.length + chunk.length <= MAX_FILE_CONTEXT_CHARS ? chunk : chunk.slice(0, MAX_FILE_CONTEXT_CHARS - fileContext.length);
@@ -1038,11 +739,16 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
   }
 
   if ((filenames.length > 0 || files.length > 0) && !String(fileContext || '').trim()) {
-    return res.json({ reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE, sources: [] });
+    return res.status(422).json({
+      error:
+        'לא נמצא טקסט מאונדקס עבור המסמכים שנבחרו. ודאו שהקובץ הועלה והאינדוקס הושלם, או העלו שוב.',
+      code: 'NO_INDEXED_TEXT',
+      sources: []
+    });
   }
 
   const systemContent = fileContext
-    ? `The user has attached the following document content. Answer questions based on it. You must respond in Hebrew (עברית) only. Do not use Arabic.\n\nIf the documents do not contain enough information to answer, reply with this single sentence only — no bullet lists, no recommendations, no next steps: אין במערכת מידע תומך לשאלה זו.\n\nDocuments:\n${fileContext}`
+    ? `The user selected the following documents. The text below is the full extracted content (as stored for search indexing). Answer the user's question in Hebrew (עברית) only. Do not use Arabic.\n\nUse this content as your source. Do not invent facts that are not supported by the text. If the question is outside what the documents cover, say so briefly in natural Hebrew (you are not required to use any fixed refusal phrase).\n\nDocuments:\n${fileContext}`
     : "You are a helpful research assistant. You must respond in Hebrew (עברית) only. Do not use Arabic.";
   const MAX_MESSAGE_CONTENT_CHARS = 4000;
   const hasFileContext = String(fileContext || '').trim().length > 0;
@@ -1050,7 +756,7 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
     ...m,
     content: typeof m.content === 'string' ? m.content.slice(0, MAX_MESSAGE_CONTENT_CHARS) : m.content
   }));
-  // No pasted docs / file_search failed: do not let prior assistant turns act as “live” document memory (e.g. after מחקר user deleted files).
+  // No document text in this request: do not let prior assistant turns act as “live” document memory (e.g. after מחקר user deleted files).
   if (!hasFileContext) {
     trimmedHistory = trimmedHistory.filter((m) => m.role === 'user');
   }
@@ -1076,11 +782,8 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
         timeout: 60000
       }
     );
-    let reply = response.data?.choices?.[0]?.message?.content?.trim() || "";
-    if (fileContext.trim()) {
-      reply = sanitizeAnswerWhenNoSupportClaimed(reply) || reply;
-    }
-    // No chunk-level attribution when the model only sees pasted full documents — avoid listing every file as “evidence”.
+    const reply = response.data?.choices?.[0]?.message?.content?.trim() || "";
+    // Ask Matriya: no RAG fail-safe sanitizer — the model already sees full document text in the system message.
     return res.json({ reply, sources: [] });
   } catch (e) {
     const status = e.response?.status;
