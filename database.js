@@ -708,6 +708,9 @@ const MatriyaAppKv = sequelize
     )
   : null;
 
+/** Single-flight DB init per process — avoids sequelize.sync() on every lightweight route (e.g. /gpt-rag/status). */
+let initDbPromise = null;
+
 // Initialize database
 async function initDb() {
   if (!sequelize) {
@@ -720,37 +723,48 @@ async function initDb() {
     logger.error(errorMsg);
     throw new Error(errorMsg);
   }
-  
-  const maxAttempts = process.env.VERCEL ? 1 : 3;
-  const delayMs = 2000;
-  let lastError;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      await sequelize.authenticate();
-      logger.info("Database connection authenticated");
-      await sequelize.sync({ alter: false }); // Use sync for simplicity, alter: false to avoid modifying existing tables
-      logger.info("Database tables initialized successfully");
-      return;
-    } catch (e) {
-      lastError = e;
-      const cause = e.cause || e.original || e;
-      const causeMsg = cause.message || cause.code || String(cause);
-      logger.error(`Error initializing database (attempt ${attempt}/${maxAttempts}): ${e.message}`);
-      logger.error(`Cause: ${causeMsg}`);
-      if (cause.code) logger.error(`Code: ${cause.code}`);
-      if (attempt < maxAttempts && (causeMsg === 'ETIMEDOUT' || cause.code === 'ETIMEDOUT')) {
-        logger.info(`Retrying in ${delayMs / 1000}s...`);
-        await new Promise(r => setTimeout(r, delayMs));
-      } else {
-        logger.error(`Stack: ${e.stack}`);
-        if (DATABASE_URL && DATABASE_URL.includes('pooler.supabase.com') && !process.env.VERCEL) {
-          logger.error("Tip: For local development, try SUPABASE_DB_URL (direct connection, port 5432) instead of POSTGRES_URL (pooler). In Supabase: Settings → Database → Connection string → URI (direct).");
+
+  if (initDbPromise) return initDbPromise;
+
+  initDbPromise = (async () => {
+    const maxAttempts = process.env.VERCEL ? 1 : 3;
+    const delayMs = 2000;
+    let lastError;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await sequelize.authenticate();
+        logger.info("Database connection authenticated");
+        await sequelize.sync({ alter: false }); // Use sync for simplicity, alter: false to avoid modifying existing tables
+        logger.info("Database tables initialized successfully");
+        return;
+      } catch (e) {
+        lastError = e;
+        const cause = e.cause || e.original || e;
+        const causeMsg = cause.message || cause.code || String(cause);
+        logger.error(`Error initializing database (attempt ${attempt}/${maxAttempts}): ${e.message}`);
+        logger.error(`Cause: ${causeMsg}`);
+        if (cause.code) logger.error(`Code: ${cause.code}`);
+        if (attempt < maxAttempts && (causeMsg === 'ETIMEDOUT' || cause.code === 'ETIMEDOUT')) {
+          logger.info(`Retrying in ${delayMs / 1000}s...`);
+          await new Promise((r) => setTimeout(r, delayMs));
+        } else {
+          logger.error(`Stack: ${e.stack}`);
+          if (DATABASE_URL && DATABASE_URL.includes('pooler.supabase.com') && !process.env.VERCEL) {
+            logger.error(
+              "Tip: For local development, try SUPABASE_DB_URL (direct connection, port 5432) instead of POSTGRES_URL (pooler). In Supabase: Settings → Database → Connection string → URI (direct)."
+            );
+          }
+          throw e;
         }
-        throw e;
       }
     }
-  }
-  throw lastError;
+    throw lastError;
+  })().catch((e) => {
+    initDbPromise = null;
+    throw e;
+  });
+
+  return initDbPromise;
 }
 
 // Get database connection (for direct queries if needed)

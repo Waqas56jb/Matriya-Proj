@@ -1980,7 +1980,7 @@ app.get("/gpt-rag/status", async (req, res) => {
         'Content-Type': 'application/json',
         'OpenAI-Beta': 'assistants=v2'
       },
-      timeout: 12000
+      timeout: 30000
     });
     return res.json({
       configured: true,
@@ -2018,10 +2018,15 @@ app.post("/gpt-rag/sync", async (req, res) => {
     return res.status(503).json({ error: e.message || 'RAG service unavailable' });
   }
   try {
+    const rawNames = req.body?.only_logical_names;
+    const onlyLogicalNames = Array.isArray(rawNames)
+      ? rawNames.map((n) => String(n || '').trim()).filter(Boolean)
+      : undefined;
     const result = await syncMatriyaRagToOpenAI(rag, {
       openaiApiKey: key,
       openaiBase: getOpenAiApiBase(),
-      onLog: (msg) => logger.info(`[gpt-rag/sync] ${msg}`)
+      onLog: (msg) => logger.info(`[gpt-rag/sync] ${msg}`),
+      ...(onlyLogicalNames && onlyLogicalNames.length > 0 ? { onlyLogicalNames } : {})
     });
     if (!result.ok) {
       return res.status(result.status).json({
