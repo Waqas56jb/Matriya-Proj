@@ -2139,24 +2139,37 @@ app.delete("/files", requireAuth, async (req, res) => {
     const rag = getRagService();
     const trimmed = filename.trim();
     const deleted = await rag.deleteDocumentsByFilename(trimmed);
+
+    // Reply immediately. OpenAI detach + prune can scan many vector-store files and take minutes,
+    // which left the UI stuck on «מוחק…» until the client timed out.
+    res.json({ success: true, message: `Deleted ${deleted} chunks`, deleted_count: deleted });
+
     const apiKey = (settings.OPENAI_API_KEY || '').trim();
     if (apiKey) {
-      try {
-        await removeMatriyaOpenAiFileByLogicalName(trimmed, {
-          openaiApiKey: apiKey,
-          openaiBase: settings.OPENAI_API_BASE,
-          onLog: (m) => logger.info(`[OpenAI delete file] ${m}`)
-        });
-      } catch (e) {
-        logger.error(`[OpenAI delete file] ${e.message}`);
-      }
-      void onMatriyaRagFileDeleted(rag, {
-        openaiApiKey: apiKey,
-        openaiBase: settings.OPENAI_API_BASE,
-        onLog: (m) => logger.info(`[OpenAI prune after delete] ${m}`)
-      }).catch((err) => logger.error(`[OpenAI prune after delete] ${err.message}`));
+      setImmediate(() => {
+        (async () => {
+          try {
+            await removeMatriyaOpenAiFileByLogicalName(trimmed, {
+              openaiApiKey: apiKey,
+              openaiBase: settings.OPENAI_API_BASE,
+              onLog: (m) => logger.info(`[OpenAI delete file] ${m}`)
+            });
+          } catch (e) {
+            logger.error(`[OpenAI delete file] ${e.message}`);
+          }
+          try {
+            await onMatriyaRagFileDeleted(rag, {
+              openaiApiKey: apiKey,
+              openaiBase: settings.OPENAI_API_BASE,
+              onLog: (m) => logger.info(`[OpenAI prune after delete] ${m}`)
+            });
+          } catch (err) {
+            logger.error(`[OpenAI prune after delete] ${err.message}`);
+          }
+        })();
+      });
     }
-    return res.json({ success: true, message: `Deleted ${deleted} chunks`, deleted_count: deleted });
+    return;
   } catch (e) {
     logger.error(`Error deleting file: ${e.message}`);
     return res.status(500).json({ error: e.message });

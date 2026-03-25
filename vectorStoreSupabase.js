@@ -724,14 +724,11 @@ class SupabaseVectorStore {
             params.push(value);
             paramIndex++;
           } else if (key === 'filename' && typeof value === 'string' && value) {
-            const escaped = value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-            const basename = path.basename(value);
-            const escapedBasename = basename.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-            conditions.push(
-              `(metadata->>'filename' = $${paramIndex} OR metadata->>'filename' LIKE $${paramIndex + 1} OR metadata->>'filename' = $${paramIndex + 2} OR metadata->>'filename' LIKE $${paramIndex + 3})`
-            );
-            params.push(value, '%' + escaped, basename, '%' + escapedBasename);
-            paramIndex += 4;
+            // Strict logical path only. LIKE/basename matching deleted every file sharing the same basename
+            // (e.g. folderA/report.pdf and folderB/report.pdf) when removing one document.
+            conditions.push(`metadata->>'filename' = $${paramIndex}`);
+            params.push(value);
+            paramIndex++;
           } else if (key !== 'filenames' && value != null) {
             conditions.push(`metadata->>'${key}' = $${paramIndex}`);
             params.push(value);
