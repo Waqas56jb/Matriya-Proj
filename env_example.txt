@@ -59,6 +59,8 @@ CHUNK_OVERLAP=100
 #
 # Domain (query–chunk lexical overlap). Irrelevant snippets/rows are dropped before generation.
 # MATRIYA_DOMAIN_MIN_QUERY_OVERLAP=2   # Min overlap score (0 = off). Empty query tokens → no filter.
+# Latin tokens in the Hebrew question (e.g. XANTHAN, pH) count toward overlap. If no token hits any chunk
+# and there is only one row, it is dropped; if several rows all have zero hit, rows are kept (file_search order).
 #
 # Conclusion gate before local LLM / before trusting Ask Matriya evidence (after similarity + domain).
 # MATRIYA_GENERATION_MIN_CHUNKS=1

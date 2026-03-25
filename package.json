@@ -7,6 +7,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "test": "npm run test:unit",
+    "test:unit": "npm run check:pre-llm-gate && npm run check:attribution-document-flow && npm run verify:david-three && npm run verify:chai-scope && npm run check:retrieval-threshold && npm run check:answer-binding && npm run test:delete-guard",
+    "test:integration": "npm run check:task3 && npm run check:task4 && npm run check:task5 && npm run check:task6 && npm run check:task7 && npm run check:task8 && npm run check:task2 && npm run check:dashboard",
+    "test:live": "node scripts/run-test-live.mjs",
     "check:task3": "node scripts/check-snapshots.js",
     "check:task4": "node scripts/check-global-metrics.js",
     "check:task5": "node scripts/check-recovery-improved.js",
@@ -19,6 +23,7 @@
     "check:attribution-document-flow": "node scripts/check-attribution-and-document-flow.js",
     "test:ask-matriya-david": "node scripts/run-ask-matriya-david-tests.mjs",
     "verify:david-three": "node scripts/print-and-verify-david-three-tests.mjs",
+    "verify:chai-scope": "node scripts/verify-chai-scope.mjs",
     "check:retrieval-threshold": "node scripts/check-retrieval-similarity-filter.js",
     "check:answer-binding": "node scripts/check-answer-binding-filter.js",
     "test:delete-guard": "node scripts/test-delete-snippet-guard.mjs"
