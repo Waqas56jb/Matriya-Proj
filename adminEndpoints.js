@@ -14,7 +14,6 @@ import { getFilWarnings } from './filLayer.js';
 import logger from './logger.js';
 import settings from './config.js';
 import { onMatriyaRagFileDeleted, removeMatriyaOpenAiFileByLogicalName } from './lib/matriyaOpenAiSync.js';
-import { scheduleMatriyaOpenAiSyncAfterIngest } from './lib/matriyaOpenAiAutoSync.js';
 
 const router = express.Router();
 
@@ -92,7 +91,6 @@ router.delete("/files/:filename", verifyAdmin, async (req, res) => {
         onLog: (m) => logger.info(`[OpenAI prune admin delete] ${m}`)
       }).catch((err) => logger.error(`[OpenAI prune admin delete] ${err.message}`));
     }
-    scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'admin/delete-file');
     return res.json({
       success: true,
       message: `File '${filename}' deleted successfully`,

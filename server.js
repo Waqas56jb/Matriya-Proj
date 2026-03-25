@@ -60,7 +60,6 @@ import {
 } from './lib/domainAndGenerationGate.js';
 import { scheduleMatriyaOpenAiSyncAfterIngest } from './lib/matriyaOpenAiAutoSync.js';
 import {
-  extractOpenAiResponsesOutputText,
   openAiResponsesFileSearch,
   buildMatriyaCatalogAppendix,
   MATRIYA_FILE_SEARCH_INSTRUCTIONS_ANSWER,
@@ -164,6 +163,121 @@ function getKernel() {
     logger.info("Kernel initialized");
   }
   return kernel;
+}
+
+/**
+ * When OpenAI file_search has nothing yet (e.g. new upload, cloud still indexing), answer from pgvector + LLM.
+ * Set MATRIYA_ASK_DISABLE_LOCAL_FALLBACK=1 to turn off.
+ */
+async function tryAskMatriyaLocalPgvector(message, filenames) {
+  const off = process.env.MATRIYA_ASK_DISABLE_LOCAL_FALLBACK;
+  if (off === '1' || off === 'true') return null;
+  const msg = String(message || '').trim();
+  if (!msg) return null;
+  let rag;
+  try {
+    rag = getRagService();
+  } catch (_) {
+    return null;
+  }
+  const filterMetadata = filenames.length > 0 ? { filenames } : null;
+  const n = Math.max(8, Math.min(24, parseInt(process.env.MATRIYA_ASK_LOCAL_FALLBACK_N || '16', 10) || 16));
+  let rows;
+  try {
+    rows = await rag.vectorStore.search(msg, n, filterMetadata);
+  } catch (e) {
+    logger.warn(`[ask-matriya] local pgvector search: ${e.message}`);
+    return null;
+  }
+  if (!rows?.length) return null;
+  let chunks = filterChunksByRetrievalSimilarityThreshold(rows);
+  if (!chunks.length) return null;
+  chunks = filterRetrievalRowsByQueryDomain(msg, chunks);
+  if (!chunks.length) return null;
+  const conclusionGate = evaluateConclusionBeforeGeneration(msg, chunks);
+  if (!conclusionGate.ok) return null;
+  const parts = chunks.slice(0, 10).map((r, i) => {
+    const fn = r.metadata?.filename || 'Unknown';
+    return `קטע ${i + 1} (מקור: ${fn}):\n${String(r.document || '').trim().slice(0, 7000)}`;
+  });
+  const context = parts.join('\n\n---\n\n');
+  const systemContent =
+    'ענו בעברית בלבד. השתמשו אך ורק בקטעים הבאים מהמאגר המקומי. אסור להמציא מידע שלא מופיע בהם. אם אין בהם מידע מספיק, השיבו במשפט אחד בדיוק: אין במערכת מידע תומך לשאלה זו.\n\nקטעים:\n' +
+    context;
+  const openaiKey = (settings.OPENAI_API_KEY || '').trim();
+  if (!openaiKey) return null;
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemContent },
+          { role: 'user', content: msg }
+        ],
+        max_tokens: 1024,
+        temperature: 0.3
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${openaiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 90000
+      }
+    );
+    let reply = response.data?.choices?.[0]?.message?.content?.trim() || '';
+    reply = sanitizeAnswerWhenNoSupportClaimed(reply) || reply;
+    const maxSrc = Math.max(1, Math.min(8, parseInt(process.env.MATRIYA_ASK_MAX_SOURCES || '8', 10) || 8));
+    const sourceRows = getStrongChunksForAttribution(chunks).slice(0, maxSrc);
+    const sources = buildAnswerSourcesFromRetrieval(sourceRows);
+    logger.info('[ask-matriya] used local pgvector fallback (cloud file_search had no snippets)');
+    return { reply: reply || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE, sources, ask_path: 'local_pgvector' };
+  } catch (e) {
+    logger.warn(`[ask-matriya] local pgvector LLM: ${e.message}`);
+    return null;
+  }
+}
+
+/**
+ * Final user-facing answer for Ask Matriya cloud path: generated only from gated retrieval rows
+ * (never from the first Responses API message, which may reflect stale vector-store content).
+ */
+async function matriyaGroundedReplyFromRelevantChunks(fullUserPrompt, relevantChunks) {
+  const key = (settings.OPENAI_API_KEY || '').trim();
+  if (!key) return '';
+  const chunks = Array.isArray(relevantChunks) ? relevantChunks : [];
+  const parts = chunks.slice(0, 10).map((r, i) => {
+    const fn = r.metadata?.filename || 'Unknown';
+    return `קטע ${i + 1} (מקור: ${fn}):\n${String(r.document || r.text || '').trim().slice(0, 7000)}`;
+  });
+  const context = parts.join('\n\n---\n\n');
+  if (!context.trim()) return '';
+  const systemContent =
+    'ענו בעברית בלבד. להלן ציטוטים בלבד מהמסמכים המורשים (המופיעים בטבלת המסמכים / שנבחרו בממשק). ' +
+    'אסור להשתמש בידע ממסמכים שאינם מופיעים בציטוטים למטה, מזיכרון הדרכה, או מכל מקור אחר. ' +
+    'אסור להמציא מידע שלא מופיע בציטוטים. אם אין בציטוטים מידע מספיק, השיבו במשפט אחד בדיוק: אין במערכת מידע תומך לשאלה זו.\n\nציטוטים:\n' +
+    context;
+  const response = await axios.post(
+    `${getOpenAiApiBase()}/chat/completions`,
+    {
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemContent },
+        { role: 'user', content: String(fullUserPrompt || '').trim().slice(0, 12000) }
+      ],
+      max_tokens: 1024,
+      temperature: 0.2
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 90000
+    }
+  );
+  return (response.data?.choices?.[0]?.message?.content || '').trim();
 }
 
 function researchKernelOptsFromRequest(req) {
@@ -607,7 +721,9 @@ app.post("/ingest/file", upload.single('file'), async (req, res) => {
     }
 
     if (result.success) {
-      scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'ingest/file');
+      scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'ingest/file', {
+        logicalName: displayFilename
+      });
       return res.json({
         success: true,
         message: "File ingested successfully",
@@ -651,7 +767,7 @@ app.post("/ingest/directory", async (req, res) => {
   try {
     const result = await getRagService().ingestDirectory(directory_path);
     if (result && result.successful > 0) {
-      scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'ingest/directory');
+      scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'ingest/directory', { fullIndex: true });
     }
     return res.json(result);
   } catch (e) {
@@ -729,12 +845,29 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
     files.length === 0 && useOpenAiFileSearchEnabled() && Boolean(getMatriyaOpenAiVectorStoreId());
 
   if (canTryCloudFileSearch) {
+    let indexFilenames = [];
     try {
-      let catalogAppendix = '';
-      try {
-        catalogAppendix = buildMatriyaCatalogAppendix(await getRagService().getAllFilenames());
-      } catch (_) {}
-      const filterMetadata = filenames.length > 0 ? { filenames } : null;
+      indexFilenames = await getRagService().getAllFilenames();
+    } catch (_) {}
+    const idxSet = new Set(indexFilenames);
+    const clientListed = filenames.length > 0;
+    const allowedFilenames = clientListed
+      ? filenames.filter((f) => idxSet.has(f))
+      : indexFilenames.slice();
+
+    if (allowedFilenames.length === 0) {
+      return res.json({
+        error: 'INSUFFICIENT_EVIDENCE',
+        reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+        sources: [],
+        status: 'INSUFFICIENT_EVIDENCE',
+        code: 'NO_ALLOWED_DOCUMENTS'
+      });
+    }
+
+    try {
+      const catalogAppendix = buildMatriyaCatalogAppendix(allowedFilenames);
+      const filterMetadata = { filenames: allowedFilenames };
       const data = await openAiResponsesFileSearch({
         query: buildAskInput(),
         instructions: MATRIYA_FILE_SEARCH_INSTRUCTIONS_ANSWER,
@@ -742,18 +875,16 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
         filterMetadata,
         catalogAppendix
       });
-      let indexFilenames = [];
-      try {
-        indexFilenames = await getRagService().getAllFilenames();
-      } catch (_) {}
       const snippetsRaw = filterFileSearchSnippetsToIndex(
         collectFileSearchSnippetsFromResponse(data),
-        indexFilenames
+        allowedFilenames
       );
-      let reply = extractOpenAiResponsesOutputText(data);
-      reply = sanitizeAnswerWhenNoSupportClaimed(reply || '') || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
 
       if (!hasFileSearchEvidence(snippetsRaw)) {
+        const localAns = await tryAskMatriyaLocalPgvector(message, allowedFilenames);
+        if (localAns) {
+          return res.json(localAns);
+        }
         return res.json({
           error: 'INSUFFICIENT_EVIDENCE',
           reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
@@ -762,7 +893,7 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
         });
       }
 
-      const gateChunksAll = buildAskMatriyaGateChunksFromSnippets(snippetsRaw, message, reply);
+      const gateChunksAll = buildAskMatriyaGateChunksFromSnippets(snippetsRaw, message, '');
       let relevantChunks = filterChunksByRetrievalSimilarityThreshold(gateChunksAll);
       if (relevantChunks.length === 0) {
         return res.json({
@@ -828,6 +959,14 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
           ...partialRest
         });
       }
+
+      let reply = '';
+      try {
+        reply = await matriyaGroundedReplyFromRelevantChunks(buildAskInput(), relevantChunks);
+      } catch (e) {
+        logger.warn(`[ask-matriya] grounded reply failed: ${e.message}`);
+      }
+      reply = sanitizeAnswerWhenNoSupportClaimed(reply || '') || RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE;
 
       if (isRagInsufficientMessage(reply)) {
         return res.json({
@@ -2012,7 +2151,6 @@ app.delete("/files", requireAuth, async (req, res) => {
         onLog: (m) => logger.info(`[OpenAI prune after delete] ${m}`)
       }).catch((err) => logger.error(`[OpenAI prune after delete] ${err.message}`));
     }
-    scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'delete/files');
     return res.json({ success: true, message: `Deleted ${deleted} chunks`, deleted_count: deleted });
   } catch (e) {
     logger.error(`Error deleting file: ${e.message}`);

@@ -39,6 +39,10 @@ COLLECTION_NAME=rag_documents
 # Set to false only if OpenAI returns filenames that never match (debug).
 # MATRIYA_SNIPPET_INDEX_FILTER=false
 
+# When cloud file_search returns no snippets yet (e.g. right after sync), answer from local pgvector + LLM.
+# MATRIYA_ASK_DISABLE_LOCAL_FALLBACK=1
+# MATRIYA_ASK_LOCAL_FALLBACK_N=16
+
 # File Upload Settings
 MAX_FILE_SIZE=52428800
 # Local: optional (default ./uploads). Vercel: leave UPLOAD_DIR unset or use a path under /tmp only (e.g. /tmp/matriya-uploads).
