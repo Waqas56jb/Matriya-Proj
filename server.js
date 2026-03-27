@@ -83,9 +83,9 @@ app.use(cors({
 // Handle preflight requests explicitly
 app.options('*', cors());
 
-// Body parsing middleware with UTF-8 support
-app.use(express.json({ charset: 'utf-8' }));
-app.use(express.urlencoded({ extended: true, charset: 'utf-8' }));
+// Body parsing middleware with UTF-8 support (limit >> default 100kb — see settings.EXPRESS_BODY_LIMIT)
+app.use(express.json({ charset: 'utf-8', limit: settings.EXPRESS_BODY_LIMIT }));
+app.use(express.urlencoded({ extended: true, charset: 'utf-8', limit: settings.EXPRESS_BODY_LIMIT }));
 
 // Set UTF-8 encoding for all responses
 app.use((req, res, next) => {

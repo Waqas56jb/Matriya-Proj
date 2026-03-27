@@ -47,6 +47,12 @@ class Settings {
     // API Settings
     this.API_HOST = process.env.API_HOST || "0.0.0.0";
     this.API_PORT = parseInt(process.env.API_PORT) || 8000;
+    /**
+     * JSON / urlencoded body size cap. Default Express is 100kb — too small for POST /ask-matriya when
+     * "כל הקבצים" sends hundreds of long logical paths (413 Payload Too Large).
+     * If 413 persists behind nginx, raise client_max_body_size to match or exceed this.
+     */
+    this.EXPRESS_BODY_LIMIT = (process.env.EXPRESS_BODY_LIMIT || '15mb').trim() || '15mb';
     
     // Supabase Settings (optional - only for Supabase client features)
     this.SUPABASE_URL = process.env.SUPABASE_URL || null;
