@@ -48,10 +48,12 @@ class LLMService {
     // חוק קרנל – שלב K: only quote existing knowledge, no explanation, no inference
     const citationOnlySystem =
       "בשלב קרנל K/C: רק צטט ידע קיים מהמסמכים. אסור להסביר למה, להסיק התאמה או להוסיף משמעות. " +
+      "אל תקבע «הכי טוב», «מומלץ» או מנצח בהשוואת פורמולות אלא אם המסמך מצטט זאת במפורש. " +
       "פורמט: \"במסמך X מופיע: [ציטוט מדויק]\". אם אין במסמכים מידע רלוונטי: אין במערכת מידע תומך לשאלה זו. " +
       "ענה בעברית בלבד. אסור להשתמש בערבית.";
     const defaultSystem =
       "Based on the given context, answer the question clearly and concisely. You must respond in Hebrew (עברית) only. Do not use Arabic. " +
+      "Do not state which formulation is best, recommended, or superior unless the context explicitly says so; describe only what appears in the context. " +
       "If the context does not contain enough information to answer, respond with this single Hebrew sentence only — no bullet lists, no recommendations, no next steps: אין במערכת מידע תומך לשאלה זו.";
     const systemPrompt = citationOnly ? citationOnlySystem : defaultSystem;
     const userContent = `Context:\n${context}\n\nQuestion: ${question}`;
@@ -68,7 +70,7 @@ class LLMService {
               { role: "user", content: userContent }
             ],
             max_tokens: maxLength,
-            temperature: 0.7,
+            temperature: settings.LLM_TEMPERATURE,
             top_p: 0.9,
             stop: ["\n\nQuestion:", "Context:", "Answer:"]
           },
@@ -115,7 +117,7 @@ class LLMService {
             inputs: prompt,
             parameters: {
               max_new_tokens: maxLength,
-              temperature: 0.7,
+              temperature: settings.LLM_TEMPERATURE,
               top_p: 0.9,
               return_full_text: false
             },

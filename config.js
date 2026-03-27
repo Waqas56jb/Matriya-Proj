@@ -58,6 +58,12 @@ class Settings {
     this.TOGETHER_MODEL = process.env.TOGETHER_MODEL || "mistralai/Mistral-7B-Instruct-v0.2";
     this.HF_API_TOKEN = process.env.HF_API_TOKEN || null;
     this.HF_MODEL = process.env.HF_MODEL || "microsoft/phi-2";
+    /** RAG/local LLM decoding: default 0 for repeatable answers (scope sign-off §8). Override with MATRIYA_LLM_TEMPERATURE. */
+    this.LLM_TEMPERATURE = (() => {
+      const t = parseFloat(process.env.MATRIYA_LLM_TEMPERATURE ?? '0');
+      if (!Number.isFinite(t) || t < 0) return 0;
+      return Math.min(2, t);
+    })();
 
     // OpenAI (for Ask Matriya chat)
     this.OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;

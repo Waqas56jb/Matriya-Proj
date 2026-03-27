@@ -583,9 +583,14 @@ app.post("/ingest/file", upload.single('file'), async (req, res) => {
     }
 
     if (result.success) {
-      scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'ingest/file', {
-        logicalName: displayFilename
-      });
+      // Matriya web UI calls POST /gpt-rag/sync after ingest — skip debounced server sync to avoid two
+      // queued syncs (long client wait + stuck «מסנכרן»). API clients without the header still get auto-sync.
+      const clientWillGptSync = String(req.get('x-matriya-client-gpt-sync') || '').trim() === '1';
+      if (!clientWillGptSync) {
+        scheduleMatriyaOpenAiSyncAfterIngest(() => getRagService(), 'ingest/file', {
+          logicalName: displayFilename
+        });
+      }
       return res.json({
         success: true,
         message: "File ingested successfully",
@@ -649,6 +654,15 @@ function isAskMatriyaSpreadsheetFilename(name) {
 /** Prepended under each spreadsheet file so the model treats TSV rows as real document content. */
 const ASK_MATRIYA_EXCEL_CONTEXT_PREAMBLE =
   '[מקור: קובץ Excel — שברי רכיב (0–1) כבר הומרו לאחוזים (×100) בטקסט המאונדקס. שורה עם סיומת «INVALID OUTPUT: row sum not 100%±0.1» = סכום השברים בשורה לא בטווח 100%±0.1. השתמש בערכי האחוזים כפי שמוצגים; אל תציג שוב כשבר עשרוני מעל התו %.]\n';
+
+/** Ask Matriya: model must not answer from general knowledge — only selected document text. */
+const ASK_MATRIYA_STRICT_DOCUMENT_ONLY_RULES = [
+  'Grounding (mandatory): Use ONLY the text under "Documents:" below as your source of truth.',
+  'Do NOT use outside knowledge, training data, or the open web: no extra facts, names, dates, laws, definitions, or background that do not appear in those documents.',
+  'You may paraphrase or quote only what is in the documents. Simple inferences are allowed only when they follow directly from stated text (e.g. counting or comparing numbers that appear in the documents).',
+  'If the documents do not contain enough information to answer, say so clearly in Hebrew — do NOT fill gaps with general knowledge.',
+  'Respond in Hebrew (עברית) only. Do not use Arabic.'
+].join('\n');
 
 /**
  * Ask Matriya: full indexed text (or first chunk fallback) into the chat prompt — not vector RAG retrieval.
@@ -770,11 +784,16 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
 
   const spreadsheetMode = contextHasSpreadsheet || /\[גיליון:/.test(fileContext);
   const spreadsheetHint = spreadsheetMode
-    ? '\n\nSpreadsheets: Lines may be tab-separated rows from Excel; sheet titles may appear as [גיליון: …]. This tabular text is valid document content. You MUST answer and summarize from it (columns, headers, values). Never claim you lack the document or cannot summarize when the Documents section above contains non-empty spreadsheet text—instead, describe sheets, columns, and data in Hebrew.\n'
+    ? '\n\nSpreadsheets: Lines may be tab-separated rows from Excel; sheet titles may appear as [גיליון: …]. This tabular text is valid document content. You MUST answer and summarize from it (columns, headers, values) still using ONLY that text—no outside knowledge. Never claim you lack the document when the Documents section contains non-empty spreadsheet text; describe sheets, columns, and data in Hebrew from the text only.\n'
     : '';
 
   const systemContent = fileContext
-    ? `The user selected the following documents. The text below is the full extracted content (as stored for search indexing). Answer the user's question in Hebrew (עברית) only. Do not use Arabic.\n\nUse this content as your source. Do not invent facts that are not supported by the text. If the question is outside what the documents cover, say so briefly in natural Hebrew (you are not required to use any fixed refusal phrase).${spreadsheetHint}\nDocuments:\n${fileContext}`
+    ? `The user selected the following documents. The text below is the full extracted content (as stored for search indexing).
+
+${ASK_MATRIYA_STRICT_DOCUMENT_ONLY_RULES}
+${spreadsheetHint}
+Documents:
+${fileContext}`
     : "You are a helpful research assistant. You must respond in Hebrew (עברית) only. Do not use Arabic.";
   const MAX_MESSAGE_CONTENT_CHARS = 4000;
   const hasFileContext = String(fileContext || '').trim().length > 0;
@@ -798,7 +817,7 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
         model: "gpt-4o-mini",
         messages,
         max_tokens: spreadsheetMode ? 2048 : 1024,
-        temperature: 0.7
+        temperature: hasFileContext ? 0.25 : 0.7
       },
       {
         headers: {
