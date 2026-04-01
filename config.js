@@ -71,6 +71,11 @@ class Settings {
       return Math.min(2, t);
     })();
 
+    /** Optional: Management (maneger) API base URL, no trailing slash — e.g. http://localhost:4000 — for «שאל על המסמכים» materials-library branch */
+    this.MATRIYA_MANAGEMENT_API_URL = (process.env.MATRIYA_MANAGEMENT_API_URL || '').trim().replace(/\/$/, '') || '';
+    /** Same secret as MANEGER_MATERIALS_SUMMARY_SERVER_KEY on maneger-back — sent as X-Matriya-Materials-Key (works without user JWT on that route). */
+    this.MATRIYA_MANAGEMENT_MATERIALS_KEY = (process.env.MATRIYA_MANAGEMENT_MATERIALS_KEY || '').trim();
+
     // OpenAI (for Ask Matriya chat)
     this.OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;
     // OpenAI File Search (Responses API): set USE_OPENAI_FILE_SEARCH=true and sync documents (or MATRIYA_OPENAI_VECTOR_STORE_ID)

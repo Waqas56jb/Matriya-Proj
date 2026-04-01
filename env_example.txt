@@ -26,6 +26,12 @@ HF_MODEL=microsoft/phi-2
 # Optional: OpenAI for better embeddings (recommended)
 OPENAI_API_KEY=your-openai-api-key
 
+# Optional: Management API (maneger-back) base URL — no trailing slash. When set, «שאל על המסמכים» can answer
+# from /api/materials + /api/projects after an LLM gate (same Bearer token as Matriya if auth is shared).
+# MATRIYA_MANAGEMENT_API_URL=http://localhost:4000
+# Same value as MANEGER_MATERIALS_SUMMARY_SERVER_KEY on maneger-back — enables aggregate URL without user JWT + Matriya forwards it on server calls.
+# MATRIYA_MANAGEMENT_MATERIALS_KEY=use-a-long-random-string-match-maneger
+
 # JWT Secret (generate a random string)
 JWT_SECRET=your-random-secret-key-here
 

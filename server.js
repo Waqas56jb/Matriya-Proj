@@ -51,6 +51,11 @@ import {
   onMatriyaRagFileDeleted,
   removeMatriyaOpenAiFileByLogicalName
 } from './lib/matriyaOpenAiSync.js';
+import {
+  classifyMaterialsLibraryIntent,
+  fetchManagementMaterialsLibraryContext,
+  answerFromMaterialsLibraryContext
+} from './lib/uploadAskMaterialsRouter.js';
 import { scheduleMatriyaOpenAiSyncAfterIngest } from './lib/matriyaOpenAiAutoSync.js';
 import { buildAnswerSourcesFromRetrieval } from './lib/answerAttribution.js';
 import {
@@ -661,8 +666,13 @@ const ASK_MATRIYA_STRICT_DOCUMENT_ONLY_RULES = [
   'Do NOT use outside knowledge, training data, or the open web: no extra facts, names, dates, laws, definitions, or background that do not appear in those documents.',
   'You may paraphrase or quote only what is in the documents. Simple inferences are allowed only when they follow directly from stated text (e.g. counting or comparing numbers that appear in the documents).',
   'If the documents do not contain enough information to answer, say so clearly in Hebrew — do NOT fill gaps with general knowledge.',
+  'Consistency: For the same evidence, prefer stable wording — same facts and order of points; avoid decorative variation or filler when the question and documents are unchanged.',
   'Respond in Hebrew (עברית) only. Do not use Arabic.'
 ].join('\n');
+
+/** POST /ask-matriya (לשונית «Ask Matriya» + «שאל על המסמכים» בהעלאה) — near-deterministic decoding when answering from indexed file text. */
+const ASK_MATRIYA_DOCUMENTS_TEMPERATURE = 0;
+const ASK_MATRIYA_DOCUMENTS_SEED = 918_273_645;
 
 /**
  * Ask Matriya: full indexed text (or first chunk fallback) into the chat prompt — not vector RAG retrieval.
@@ -677,7 +687,7 @@ async function loadIndexedTextForAskMatriya(rag, filename) {
 
 /**
  * Ask Matriya: chat with AI about selected files (OpenAI).
- * Injects full extracted text (capped) into the system message — not retrieval / file_search RAG.
+ * Flow: (1) LLM classifies materials-library vs document intent; (2) if materials + MATRIYA_MANAGEMENT_API_URL returns data, answer from management /api/materials + /api/projects only; (3) else full extracted text (capped) in system message — not vector RAG.
  * Body: JSON { message, history?, filenames? } for system files, or multipart (message, history, files) for uploads.
  */
 const docProcessor = new DocumentProcessor();
@@ -723,11 +733,55 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
     });
   }
   const MAX_FILE_CONTEXT_CHARS = 80000;
-  const MAX_HISTORY_MESSAGES = 20;
 
   const openaiKey = settings.OPENAI_API_KEY;
   if (!openaiKey) {
     return res.status(503).json({ error: "OpenAI API key not configured. Set OPENAI_API_KEY in .env." });
+  }
+
+  const MAX_HISTORY_MESSAGES = 20;
+  const MAX_MESSAGE_CONTENT_CHARS = 4000;
+  let materialsIntent = false;
+  try {
+    materialsIntent = await classifyMaterialsLibraryIntent(message, openaiKey);
+  } catch (_) {
+    materialsIntent = false;
+  }
+  if (materialsIntent) {
+    const managementBase = settings.MATRIYA_MANAGEMENT_API_URL || '';
+    const authHeader = req.headers?.authorization || '';
+    logger.info(
+      `[ask-matriya routing] classifier=MATERIALS_LIBRARY → trying management API | management_base=${managementBase || '(unset)'}`
+    );
+    const { text: libraryText, ok: libraryOk } = await fetchManagementMaterialsLibraryContext(
+      authHeader,
+      managementBase
+    );
+    if (libraryOk && String(libraryText || '').trim()) {
+      try {
+        const historyForMaterials = (Array.isArray(history) ? history.slice(-MAX_HISTORY_MESSAGES) : []).map((m) => ({
+          ...m,
+          content: typeof m.content === 'string' ? m.content.slice(0, MAX_MESSAGE_CONTENT_CHARS) : m.content
+        }));
+        const replyMat = await answerFromMaterialsLibraryContext(
+          message,
+          libraryText,
+          openaiKey,
+          historyForMaterials
+        );
+        return res.json({ reply: replyMat, sources: [], ask_mode: 'materials_library' });
+      } catch (e) {
+        logger.error(
+          `[ask-matriya routing] MATERIALS_LIBRARY answer LLM failed → fallback DOCUMENTS | ${e.message}`
+        );
+      }
+    } else {
+      logger.info(
+        `[ask-matriya routing] classifier=MATERIALS_LIBRARY but no management context (ok=${libraryOk}) → fallback DOCUMENTS`
+      );
+    }
+  } else {
+    logger.info(`[ask-matriya routing] classifier=DOCUMENTS → full indexed text path (filenames=${filenames.length})`);
   }
 
   // Full-document context in the chat prompt (no vector / file_search RAG for this route).
@@ -795,7 +849,6 @@ ${spreadsheetHint}
 Documents:
 ${fileContext}`
     : "You are a helpful research assistant. You must respond in Hebrew (עברית) only. Do not use Arabic.";
-  const MAX_MESSAGE_CONTENT_CHARS = 4000;
   const hasFileContext = String(fileContext || '').trim().length > 0;
   let trimmedHistory = (Array.isArray(history) ? history.slice(-MAX_HISTORY_MESSAGES) : []).map(m => ({
     ...m,
@@ -817,7 +870,8 @@ ${fileContext}`
         model: "gpt-4o-mini",
         messages,
         max_tokens: spreadsheetMode ? 2048 : 1024,
-        temperature: hasFileContext ? 0.25 : 0.7
+        temperature: hasFileContext ? ASK_MATRIYA_DOCUMENTS_TEMPERATURE : 0.2,
+        ...(hasFileContext ? { seed: ASK_MATRIYA_DOCUMENTS_SEED } : {})
       },
       {
         headers: {
@@ -828,12 +882,15 @@ ${fileContext}`
       }
     );
     const reply = response.data?.choices?.[0]?.message?.content?.trim() || "";
+    logger.info(
+      `[ask-matriya routing] response path=DOCUMENTS | spreadsheetMode=${spreadsheetMode} file_context_chars=${String(fileContext || '').length} reply_chars=${reply.length}`
+    );
     // Ask Matriya: no RAG fail-safe sanitizer — the model already sees full document text in the system message.
     return res.json({ reply, sources: [] });
   } catch (e) {
     const status = e.response?.status;
     const msg = e.response?.data?.error?.message || e.message || "OpenAI request failed";
-    logger.error(`Ask Matriya OpenAI error: ${msg}`);
+    logger.error(`[ask-matriya routing] DOCUMENTS path OpenAI error: ${msg}`);
     return res.status(status === 401 ? 401 : status === 429 ? 429 : 500).json({
       error: msg
     });
