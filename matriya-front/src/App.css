@@ -1,0 +1,200 @@
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 40px;
+    padding: 30px 20px;
+    background: var(--matriya-surface);
+    border-radius: 20px;
+    border: 1px solid var(--matriya-border);
+    box-shadow: var(--matriya-shadow);
+    position: relative;
+    overflow: hidden;
+}
+
+header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--matriya-accent);
+    background-size: 200% 100%;
+    animation: shimmer 3s linear infinite;
+}
+
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+header h1 {
+    font-size: 3em;
+    margin-bottom: 10px;
+    color: var(--matriya-accent);
+    font-weight: 800;
+    letter-spacing: -1px;
+}
+
+.subtitle {
+    font-size: 1.2em;
+    color: var(--matriya-muted);
+    font-weight: 400;
+}
+
+.tabs {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 30px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.tab-button {
+    padding: 14px 28px;
+    background: var(--matriya-surface);
+    border: 1px solid var(--matriya-border);
+    border-radius: 12px;
+    color: var(--matriya-text);
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 600;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.tab-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transition: left 0.5s;
+}
+
+.tab-button:hover::before {
+    left: 100%;
+}
+
+.tab-button:hover {
+    background: rgba(22, 101, 52, 0.08);
+    border-color: var(--matriya-accent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(22, 101, 52, 0.15);
+}
+
+.tab-button.active {
+    background: var(--matriya-accent);
+    color: white;
+    border-color: var(--matriya-accent);
+    box-shadow: 0 8px 25px rgba(22, 101, 52, 0.3);
+    transform: translateY(-2px);
+}
+
+.tab-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+    transform: none;
+    box-shadow: none;
+}
+
+.tab-button:disabled:hover {
+    background: var(--matriya-surface);
+    border-color: var(--matriya-border);
+    transform: none;
+    box-shadow: none;
+}
+
+.tab-button.active:disabled {
+    opacity: 0.85;
+    background: var(--matriya-accent);
+    border-color: var(--matriya-accent);
+}
+
+.tab-content-wrapper {
+    animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.card {
+    background: var(--matriya-surface);
+    border-radius: 20px;
+    padding: 40px;
+    margin-bottom: 20px;
+    border: 1px solid var(--matriya-border);
+    box-shadow: var(--matriya-shadow);
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    border-color: var(--matriya-accent);
+    box-shadow: 0 12px 40px rgba(22, 101, 52, 0.12);
+}
+
+.card h2 {
+    margin-bottom: 25px;
+    color: var(--matriya-text);
+    font-size: 1.8em;
+    font-weight: 700;
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--matriya-muted);
+    font-size: 1.1em;
+}
+
+.logout-button {
+    padding: 10px 20px;
+    background: var(--matriya-danger);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(220, 38, 38, 0.25);
+}
+
+.logout-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(220, 38, 38, 0.35);
+}
+
+@media (max-width: 768px) {
+    header h1 {
+        font-size: 2em;
+    }
+    
+    .tabs {
+        flex-direction: column;
+    }
+    
+    .tab-button {
+        width: 100%;
+    }
+    
+    .card {
+        padding: 25px;
+    }
+}

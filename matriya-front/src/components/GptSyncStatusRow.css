@@ -1,0 +1,64 @@
+.gpt-sync-status-row {
+    padding: 10px 12px;
+    background: rgba(240, 242, 245, 0.55);
+    border-radius: 8px;
+    border: 1px solid rgba(22, 101, 52, 0.22);
+    margin-bottom: 12px;
+}
+
+.gpt-sync-status-row__inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.gpt-sync-status-row__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.gpt-sync-status-row__label {
+    font-size: 0.9rem;
+    flex: 1 1 200px;
+    color: var(--matriya-text, #1a1a1a);
+}
+
+.gpt-sync-status-row__warn {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.85rem;
+    color: var(--matriya-error, #b45309);
+}
+
+.gpt-sync-status-row__btn {
+    font-size: 0.85rem;
+    padding: 4px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(22, 101, 52, 0.35);
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--matriya-text, #1a1a1a);
+    cursor: pointer;
+}
+
+.gpt-sync-status-row__btn:hover:not(:disabled) {
+    border-color: rgba(22, 101, 52, 0.55);
+    background: rgba(22, 101, 52, 0.08);
+}
+
+.gpt-sync-status-row__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.gpt-sync-status-row__btn--primary {
+    background: linear-gradient(135deg, var(--matriya-accent, #166534) 0%, var(--matriya-accent-hover, #14532d) 100%);
+    color: #fff;
+    border-color: transparent;
+}
+
+.gpt-sync-status-row__btn--primary:hover:not(:disabled) {
+    filter: brightness(1.05);
+}

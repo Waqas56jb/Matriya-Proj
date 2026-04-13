@@ -1,0 +1,293 @@
+.ask-matriya-tab {
+    width: 100%;
+}
+
+.ask-matriya-single {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.ask-matriya-single h2 {
+    margin-top: 0;
+}
+
+.ask-matriya-hint {
+    color: var(--matriya-muted);
+    font-size: 0.95em;
+    margin: 0 0 20px 0;
+}
+
+.ask-matriya-gpt-sync {
+    margin-bottom: 16px;
+}
+
+/* Stack above .ask-matriya-messages so the open dropdown is not painted underneath the chat area. */
+.ask-matriya-file-section {
+    position: relative;
+    z-index: 5;
+    margin-bottom: 20px;
+    padding: 14px 18px;
+    background: rgba(22, 101, 52, 0.06);
+    border: 1px solid var(--matriya-border);
+    border-radius: 12px;
+}
+
+.ask-matriya-file-section-label {
+    display: block;
+    font-size: 0.9em;
+    font-weight: 600;
+    color: var(--matriya-text);
+    margin-bottom: 10px;
+}
+
+.ask-matriya-loading-files,
+.ask-matriya-no-files {
+    color: var(--matriya-muted);
+    font-size: 0.95em;
+}
+
+.ask-matriya-dropdown {
+    position: relative;
+}
+
+.ask-matriya-dropdown-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 16px;
+    border: 1px solid var(--matriya-border);
+    border-radius: 10px;
+    background: var(--matriya-surface);
+    color: var(--matriya-text);
+    font-size: 1em;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.ask-matriya-dropdown-trigger:hover,
+.ask-matriya-dropdown-trigger[aria-expanded="true"] {
+    border-color: var(--matriya-accent);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(22, 101, 52, 0.15);
+}
+
+.ask-matriya-dropdown-trigger-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ask-matriya-dropdown-arrow {
+    flex-shrink: 0;
+    color: var(--matriya-muted);
+    font-size: 0.75em;
+}
+
+.ask-matriya-dropdown-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 50;
+    background: var(--matriya-surface);
+    border: 1px solid var(--matriya-border);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    overflow: hidden;
+}
+
+.ask-matriya-dropdown-search {
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    border-bottom: 1px solid var(--matriya-border);
+    background: rgba(0, 0, 0, 0.03);
+    color: var(--matriya-text);
+    font-size: 0.95em;
+}
+
+.ask-matriya-dropdown-search::placeholder {
+    color: var(--matriya-muted);
+}
+
+.ask-matriya-dropdown-search:focus {
+    outline: none;
+    background: rgba(22, 101, 52, 0.05);
+}
+
+.ask-matriya-dropdown-list {
+    max-height: min(50vh, 420px);
+    overflow-y: auto;
+}
+
+.ask-matriya-dropdown-empty {
+    padding: 16px;
+    color: var(--matriya-muted);
+    font-size: 0.95em;
+    text-align: center;
+}
+
+.ask-matriya-dropdown-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    background: transparent;
+    color: var(--matriya-text);
+    font-size: 0.95em;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.ask-matriya-dropdown-option:hover {
+    background: rgba(22, 101, 52, 0.08);
+}
+
+.ask-matriya-dropdown-option.selected {
+    background: rgba(22, 101, 52, 0.12);
+}
+
+.ask-matriya-dropdown-option-check {
+    flex-shrink: 0;
+    width: 18px;
+    color: var(--matriya-accent);
+    font-weight: bold;
+}
+
+.ask-matriya-dropdown-option-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ask-matriya-file-kind {
+    flex-shrink: 0;
+    font-size: 0.72em;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(22, 101, 52, 0.14);
+    color: var(--matriya-accent, #166534);
+}
+
+.ask-matriya-messages {
+    position: relative;
+    z-index: 1;
+    min-height: 260px;
+    max-height: 45vh;
+    overflow-y: auto;
+    padding: 16px 0;
+    margin-bottom: 16px;
+    border: 1px solid var(--matriya-border);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.ask-matriya-placeholder {
+    color: var(--matriya-muted);
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.ask-matriya-msg {
+    margin: 0 16px 12px;
+    max-width: 85%;
+}
+
+.ask-matriya-msg-user {
+    margin-left: auto;
+    margin-right: 16px;
+}
+
+.ask-matriya-msg-content {
+    padding: 12px 16px;
+    border-radius: 14px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.ask-matriya-msg-user .ask-matriya-msg-content {
+    background: var(--matriya-accent);
+    color: white;
+    border-bottom-right-radius: 4px;
+}
+
+.ask-matriya-msg-assistant .ask-matriya-msg-content {
+    background: var(--matriya-surface);
+    border: 1px solid var(--matriya-border);
+    border-bottom-left-radius: 4px;
+}
+
+.ask-matriya-typing {
+    color: var(--matriya-muted);
+    font-style: italic;
+}
+
+.ask-matriya-error {
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    background: rgba(220, 38, 38, 0.1);
+    border: 1px solid rgba(220, 38, 38, 0.3);
+    border-radius: 10px;
+    color: var(--matriya-danger, #dc2626);
+    font-size: 0.95em;
+}
+
+.ask-matriya-input-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+}
+
+.ask-matriya-input {
+    flex: 1;
+    padding: 14px 18px;
+    border: 1px solid var(--matriya-border);
+    border-radius: 12px;
+    font-size: 1em;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 52px;
+    background: var(--matriya-surface);
+    color: var(--matriya-text);
+}
+
+.ask-matriya-input:focus {
+    outline: none;
+    border-color: var(--matriya-accent);
+    box-shadow: 0 0 0 2px rgba(22, 101, 52, 0.2);
+}
+
+.ask-matriya-input::placeholder {
+    color: var(--matriya-muted);
+}
+
+.ask-matriya-send {
+    padding: 14px 24px;
+    background: var(--matriya-accent);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.ask-matriya-send:hover:not(:disabled) {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+}
+
+.ask-matriya-send:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
