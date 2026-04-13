@@ -38,6 +38,7 @@ import {
 } from './lib/labEmailImportValidation.js';
 import { deleteManagementVectorByFilename } from './lib/managementRagDelete.js';
 import { sendLabImportIncompleteEmail } from './lib/sendLabImportIncompleteEmail.js';
+import { labBridgeQueryHandler } from './lib/labBridgeQueryRoute.js';
 /** Do not static-import pdf-to-img: it loads pdfjs-dist which needs canvas/DOM and crashes Vercel cold start. */
 
 const PORT = parseInt(process.env.PORT, 10) || 8001;
@@ -331,6 +332,7 @@ function parsePagination(req) {
 app.get('/', (req, res) => res.json({ service: 'maneger-back', health: '/health', api: '/api' }));
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.get('/favicon.png', (req, res) => res.status(204).end());
+app.get('/api/lab/query', labBridgeQueryHandler);
 
 // ---------- Projects ----------
 app.get('/api/projects', async (req, res) => {
