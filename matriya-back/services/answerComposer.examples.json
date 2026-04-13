@@ -1,0 +1,47 @@
+[
+  {
+    "_case": "VALID_CONCLUSION — REAL data, controlled OVAT, delta ≥ threshold",
+    "answer": "Query: … [version_comparison] Decision: VALID_CONCLUSION. Data grade (evidence): REAL. Runs (evidence.run_ids): …",
+    "decision_status": "VALID_CONCLUSION",
+    "evidence": {
+      "run_ids": ["uuid-b", "uuid-a"],
+      "baseline_run_id": "uuid-a",
+      "data_grade": "REAL",
+      "delta_summary": { "max_delta_pct": 16.67, "dominant_channel": "v6", "channels": [] },
+      "threshold": 10
+    },
+    "external_context": [],
+    "blocked_reason": null,
+    "next_step": "Proceed to production change control with cited REAL runs; retain provenance for audit."
+  },
+  {
+    "_case": "INCONCLUSIVE — REAL but delta below efficacy threshold",
+    "answer": "Query: … Decision: INCONCLUSIVE. Data grade (evidence): REAL. …",
+    "decision_status": "INCONCLUSIVE",
+    "evidence": {
+      "run_ids": ["run-1"],
+      "baseline_run_id": "run-0",
+      "data_grade": "REAL",
+      "delta_summary": { "max_delta_pct": 5, "dominant_channel": "v6", "channels": [] },
+      "threshold": 10
+    },
+    "external_context": [],
+    "blocked_reason": "No definitive efficacy conclusion: max delta is below the 10% threshold (or lab marked inconclusive with comparable delta).",
+    "next_step": "Plan additional controlled REAL runs with declared single-variable delta vs an approved baseline."
+  },
+  {
+    "_case": "INSUFFICIENT_DATA — no source_run_ids",
+    "answer": "Query: … Decision: INSUFFICIENT_DATA. …",
+    "decision_status": "INSUFFICIENT_DATA",
+    "evidence": {
+      "run_ids": [],
+      "baseline_run_id": null,
+      "data_grade": "HISTORICAL_REFERENCE",
+      "delta_summary": {},
+      "threshold": null
+    },
+    "external_context": [],
+    "blocked_reason": "No valid conclusion: missing runs, missing comparable delta, lab INSUFFICIENT_DATA, or baseline gap.",
+    "next_step": "Acquire missing runs, comparable measurements (max_delta_pct), or FSCTM fields; then re-run the same lab query type."
+  }
+]

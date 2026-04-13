@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "description": "Physics-style elimination rules for material conditions (no DB, no suppliers).",
+  "rules": [
+    {
+      "id": "TEMP_CEILING_S3",
+      "when": { "field": "temperature_c", "op": ">", "value": 175 },
+      "eliminates": true,
+      "reasoning": "Continuous processing above 175°C exceeds the validated thermal envelope for grade S3 binders.",
+      "observable_expectations": [
+        "DSC: onset of binder softening or degradation before target cure plateau",
+        "FTIR: carbonyl growth consistent with oxidative or thermal breakdown"
+      ]
+    },
+    {
+      "id": "RH_HIGH_WITH_HYGROSCOPIC_FILLER",
+      "when": {
+        "all": [
+          { "field": "relative_humidity_pct", "op": ">", "value": 85 },
+          { "field": "hygroscopic_filler", "op": "eq", "value": true }
+        ]
+      },
+      "eliminates": true,
+      "reasoning": "Ambient RH above 85% with declared hygroscopic filler drives uncontrolled moisture uptake during open mix.",
+      "observable_expectations": [
+        "Karl Fischer or loss-on-drying spike vs dry baseline",
+        "Viscosity drift during idle open time exceeding QC band"
+      ]
+    },
+    {
+      "id": "PH_EXTREME_ACID",
+      "when": { "field": "ph", "op": "<", "value": 3.5 },
+      "eliminates": true,
+      "reasoning": "Bulk pH below 3.5 implies aggressive acid catalysis incompatible with default stabiliser package.",
+      "observable_expectations": [
+        "Titration curve inflection inconsistent with target buffer capacity",
+        "Salt formation or precipitation within first 30 minutes of hold"
+      ]
+    },
+    {
+      "id": "PH_EXTREME_ALKALI",
+      "when": { "field": "ph", "op": ">", "value": 11.5 },
+      "eliminates": true,
+      "reasoning": "Bulk pH above 11.5 risks saponification or filler attack under stated silicate chemistry.",
+      "observable_expectations": [
+        "Conductivity rise during idle indicating ion release",
+        "Particle size shift in laser diffraction vs pre-mix baseline"
+      ]
+    },
+    {
+      "id": "SHEAR_RATE_LOW_FOR_FINE_DISPERSION",
+      "when": {
+        "all": [
+          { "field": "target_particle_d90_um", "op": "<", "value": 5 },
+          { "field": "max_shear_rate_s1", "op": "<", "value": 500 }
+        ]
+      },
+      "eliminates": false,
+      "reasoning": "Target d90 below 5 µm is unlikely at peak shear under 500 s⁻¹ for this dispersion class (risk flag, not hard eliminate).",
+      "observable_expectations": [
+        "Microscopy or laser diffraction tail above 10 µm after nominally complete dispersion step"
+      ]
+    }
+  ]
+}

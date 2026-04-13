@@ -1,0 +1,56 @@
+{
+  "rule_id": "ISM-001",
+  "summary": "Surface barrier / hydrophobicity vs bulk penetration — disqualify bulk-failure hypotheses when only surface effects are observable.",
+  "observable_map": [
+    {
+      "id": "OM-1",
+      "signal": "Stain / dye front progression",
+      "interpretation": "Maps to effective penetration depth vs nominal film thickness."
+    },
+    {
+      "id": "OM-2",
+      "signal": "Contact angle hysteresis after mechanical abrasion",
+      "interpretation": "Surface reconstruction vs stable bulk chemistry."
+    },
+    {
+      "id": "OM-3",
+      "signal": "FTIR depth profile (cross-section)",
+      "interpretation": "Chemical identity gradient — surface-only modifier vs bulk ingress."
+    }
+  ],
+  "test_protocol": [
+    {
+      "method": "Profilometry + microtome cross-section",
+      "measurement": "Penetration depth (µm)"
+    },
+    {
+      "method": "Goniometry (sessile drop)",
+      "measurement": "Contact angle before/after controlled abrasion"
+    },
+    {
+      "method": "FTIR imaging / ATR mapping",
+      "measurement": "Cross-section chemistry vs depth"
+    }
+  ],
+  "recommended_experiments": [
+    {
+      "id": 1,
+      "line": "Experiment 1: measure penetration depth (µm)",
+      "observable_map_ref": "OM-1",
+      "test_protocol_ref": 0
+    },
+    {
+      "id": 2,
+      "line": "Experiment 2: contact angle before/after abrasion",
+      "observable_map_ref": "OM-2",
+      "test_protocol_ref": 1
+    },
+    {
+      "id": 3,
+      "line": "Experiment 3: FTIR cross-section",
+      "observable_map_ref": "OM-3",
+      "test_protocol_ref": 2
+    }
+  ],
+  "expected_failure_pattern": "Surface hydrophobicity, no bulk penetration"
+}

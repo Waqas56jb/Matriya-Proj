@@ -1,0 +1,122 @@
+{
+  "_batch_label": "CE-003-A — BASELINE (exact root protocol)",
+  "_experiment": "CE-BASE-003",
+  "_status": "PRE-FILLED — awaiting post-run measurements",
+  "_operator_instructions": [
+    "Fields marked FILL_IN must be completed AFTER the run.",
+    "Do NOT change any step values — protocol is locked.",
+    "Do NOT change any material fractions — composition is fixed.",
+    "Record production_temperature_c during mixing (any point, e.g. mid-batch).",
+    "Record test_date as the date viscosity was measured (may differ from production_date).",
+    "Record days_since_production = test_date minus production_date (integer).",
+    "After filling all FILL_IN fields, send file back to Waqas before ingest."
+  ],
+
+  "runs": [
+    {
+      "_batch_label": "CE-003-A — BASELINE",
+      "_changed_variable": "none — reproduction of 10.11.2022-003 root protocol",
+      "_expected_outcome": "v6 ≈ 25,000–26,000 cps (same as root). Confirms reproducibility.",
+      "_batch_size_grams": 1000,
+
+      "formulation_source_id": "10.11.2022-003",
+      "batch_id": "CE-003-A",
+      "run_origin": "REAL",
+      "production_date": "2026-04-12",
+      "operator": "Rachel",
+      "production_temperature_c": "FILL_IN (measure during mixing — number in °C)",
+      "raw_process_notes": "CE-003-A baseline. Batch size: 1000g. Exact reproduction of root protocol 10.11.2022-003.",
+      "foaming_event": false,
+
+      "steps": [
+        {
+          "step_sequence": 1,
+          "material_name": "מים",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add water (מים). Mix 5 min at 600 rpm."
+        },
+        {
+          "step_sequence": 2,
+          "material_name": "OROTAN 731",
+          "mixing_duration_min": 2,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add OROTAN 731. Mix 2 min at 600 rpm."
+        },
+        {
+          "step_sequence": 3,
+          "material_name": "COMBIZELL",
+          "mixing_duration_min": 10,
+          "mixing_speed_rpm": 1200,
+          "raw_step_instruction": "Add COMBIZELL. Mix 10 min at 1200 rpm."
+        },
+        {
+          "step_sequence": 4,
+          "material_name": "RM-825",
+          "mixing_duration_min": 2,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add RM-825. Mix 2 min at 600 rpm."
+        },
+        {
+          "step_sequence": 5,
+          "material_name": "AGITAN 80",
+          "mixing_duration_min": 20,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add AGITAN 80. Mix 20 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 6,
+          "material_name": "TIONA 595",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add TIONA 595. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 7,
+          "material_name": "CHARMOR PM 40",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add CHARMOR PM 40. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 8,
+          "material_name": "MELAFINE",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add MELAFINE. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 9,
+          "material_name": "EXOLIT AP435",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add EXOLIT AP435. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 10,
+          "material_name": "ENCOR 367",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add ENCOR 367 (binder). Mix 5 min at 600 rpm."
+        }
+      ],
+
+      "measurement": {
+        "test_date": "FILL_IN (YYYY-MM-DD — date viscosity was measured)",
+        "days_since_production": "FILL_IN (integer — test_date minus 2026-04-12)",
+        "linkage_confidence": "REAL_RUN"
+      },
+
+      "outcome": {
+        "ph": "FILL_IN (number)",
+        "viscosity_6rpm_cps": "FILL_IN (number)",
+        "viscosity_12rpm_cps": "FILL_IN (number)",
+        "viscosity_30rpm_cps": "FILL_IN (number)",
+        "viscosity_60rpm_cps": "FILL_IN (number)",
+        "separation_pct": null,
+        "color_delta_e": null,
+        "raw_outcome_notes": "CE-003-A baseline measurement. Rachel. 2026-04-12."
+      }
+    }
+  ]
+}

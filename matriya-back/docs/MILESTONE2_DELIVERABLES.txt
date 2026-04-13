@@ -1,0 +1,33 @@
+Milestone 2 — client deliverables (David, Apr 13)
+
+When integration work is done, send David:
+
+1) Working UI on real backend
+   - REACT_APP_API_BASE_URL (or equivalent) → live matriya-back
+   - Lab flow uses POST /api/research/search flow=lab only (no mock body)
+
+2) Screenshots
+   - BASE-003 version comparison visible
+   - Decision + Evidence + Blocked reason (if any) + Next step
+   - External context: for VALID_CONCLUSION the external block is hidden by policy; for other decisions show the “not validated / not evidence” section
+
+3) Sample JSON
+   - From Network tab or PowerShell — same response the UI renders
+
+4) Written confirmation
+   - “Frontend uses real Answer Composer JSON only; no mockLabResponse / mockDocumentResponse in this branch.”
+
+5) Optional: terminal proof
+   - npm run test:unit
+   - npm run verify:constraint-engine
+   - realDataLabValidation + milestone1PassProof --db-sensitivity
+
+ISM-001 (separate from M2 UI)
+   - npm run demo:ism001-experiment-plan
+   - Send output sample + paths from MATRIYA_Constraint_Engine_Guide.md
+
+Constraint Engine on lab flow (David Apr 11)
+   - API: composeAnswer / flow=lab JSON includes optional top-level constraint_rules[] (rule_id, matched, confidence, recommended_experiments, expected_failure_pattern). Does not change decision_status; not merged into evidence or external_context.
+   - UI: matriya-front (under monorepo matriya-back/) AnswerView — section "Suggested Experiments (Constraint Engine)" below Evidence (ConstraintRulesBlock.jsx).
+   - Automated test: npm run verify:lab-constraint-rules (surface hydrophobic + no penetration fixture triggers ISM-001).
+   - Screenshot (representative): docs/constraint_rules_ui_screenshot.png — capture a fresh shot from the running app when a real lab contract triggers the rule.

@@ -1,0 +1,11 @@
+{
+  "query_type": "version_comparison",
+  "source_run_ids": [],
+  "baseline_run_id": null,
+  "data_grade": "NO_DATA",
+  "run_type": null,
+  "conclusion_status": "INSUFFICIENT_DATA",
+  "delta_summary": null,
+  "blocked_reason": "No runs found for BASE-003 versions \"003.1\" or \"003.2\"",
+  "source_metadata": {}
+}

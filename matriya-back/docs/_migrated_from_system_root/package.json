@@ -1,0 +1,29 @@
+{
+  "name": "matriya-system",
+  "version": "1.0.0",
+  "description": "Matriya RAG system – backend + frontend",
+  "main": "server.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shoshan19-prog/matriya-system.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/shoshan19-prog/matriya-system/issues"
+  },
+  "homepage": "https://github.com/shoshan19-prog/matriya-system#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.101.1",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1"
+  }
+}

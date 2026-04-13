@@ -1,0 +1,14 @@
+=== RAG production check ===
+Manager URL: https://manegment-back.vercel.app
+
+[OK] RAG health: Matriya is reachable from manager
+
+[OK] Research session created: 94bba8b9-014e-4b5d-98e1-c0ea4efbb90c
+[OK] Research run returned 200
+[FAIL] Answer is the "no content" message – RAG has no documents in this environment
+       Snippet: לא נמצא תוכן במערכת. ייתכן שקבצים טרם עובדו (אינדוקס) בסביבה זו. וודא שהקבצים הועלו ושה-Matriya בסביבת ה-production מקבל...
+
+--- Summary ---
+RAG health: OK
+Research session: OK
+Research run: FAIL – RAG empty (ingest files in prod or check POSTGRES_URL/rag_documents)

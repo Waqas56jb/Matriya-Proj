@@ -1,0 +1,35 @@
+{
+  "query": "t",
+  "flow": "lab",
+  "research_flow": "lab_bridge",
+  "routing": "LAB_BRIDGE_ONLY",
+  "lab_bridge_invoked": true,
+  "document_rag_invoked": false,
+  "kernel_invoked": false,
+  "state_machine": false,
+  "lab_contract": {
+    "query_type": "version_comparison",
+    "source_run_ids": [],
+    "baseline_run_id": null,
+    "data_grade": "NO_DATA",
+    "run_type": null,
+    "conclusion_status": "INSUFFICIENT_DATA",
+    "delta_summary": null,
+    "blocked_reason": "No runs found for BASE-003 versions \"003.1\" or \"003.2\"",
+    "source_metadata": {}
+  },
+  "reply": "[LAB_BRIDGE] query_type=version_comparison\ndata_grade=NO_DATA\nconclusion_status=INSUFFICIENT_DATA\nsource_run_ids=(none)\nblocked_reason=No runs found for BASE-003 versions \"003.1\" or \"003.2\"",
+  "answer": "[LAB_BRIDGE] query_type=version_comparison\ndata_grade=NO_DATA\nconclusion_status=INSUFFICIENT_DATA\nsource_run_ids=(none)\nblocked_reason=No runs found for BASE-003 versions \"003.1\" or \"003.2\"",
+  "status": "INSUFFICIENT_DATA",
+  "no_valid_data": true,
+  "reply_code": "NO_ANSWER",
+  "results_count": 0,
+  "results": [],
+  "sources": [],
+  "source_binding": {
+    "source_run_ids": [],
+    "baseline_run_id": null,
+    "document_sources": []
+  },
+  "user_id": null
+}

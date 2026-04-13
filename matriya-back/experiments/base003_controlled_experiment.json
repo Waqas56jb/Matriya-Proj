@@ -1,0 +1,348 @@
+{
+  "_experiment_meta": {
+    "experiment_id": "CE-BASE-003",
+    "purpose": "Identify which process variable explains the viscosity increase 003.1→003.2 (~8–13%).",
+    "hypothesis": "Higher mixing speed or longer mixing duration on key dispersion steps causes viscosity to increase in the final product.",
+    "design": "One variable at a time (OVAT). All batches use identical BASE-003 composition. Only one process parameter changes per batch.",
+    "base_formulation_source_id": "10.11.2022-003",
+    "composition_scale": 2.0,
+    "variable_map": {
+      "CE-003-A": "BASELINE — exact root protocol reproduced",
+      "CE-003-B": "SPEED INCREASE — AGITAN 80 step: 1400 → 1800 rpm (all else identical to A)",
+      "CE-003-C": "DURATION INCREASE — COMBIZELL step: 10 min → 20 min (all else identical to A)"
+    },
+    "instructions_for_operator": [
+      "Fill in: batch_id, production_date, operator, production_temperature_c.",
+      "Do NOT change any material fraction — composition must be identical to 10.11.2022-003.",
+      "Follow step_sequence order exactly.",
+      "Record mixing_speed_rpm and mixing_duration_min for EVERY step (no NULLs allowed).",
+      "If a step has no active mixing, record speed=0 and duration=0.",
+      "After curing, measure viscosity at v6, v12, v30, v60 rpm and record test_date.",
+      "Record pH.",
+      "Save the filled file and pass to ingestRealRun.js for DB ingest."
+    ]
+  },
+
+  "runs": [
+
+    {
+      "_batch_label": "CE-003-A — BASELINE (exact root protocol)",
+      "_changed_variable": "none — reproduction of 10.11.2022-003 root run",
+      "_expected_outcome": "Viscosity close to root: v6 ≈ 25,000–26,000 cps. Confirms reproducibility.",
+
+      "formulation_source_id": "10.11.2022-003",
+      "batch_id": "CE-003-A",
+      "run_origin": "REAL",
+      "production_date": "FILL_IN (YYYY-MM-DD)",
+      "operator": "FILL_IN",
+      "production_temperature_c": "FILL_IN (number)",
+      "raw_process_notes": "Controlled experiment CE-003-A. Baseline reproduction of root protocol.",
+      "foaming_event": false,
+
+      "steps": [
+        {
+          "step_sequence": 1,
+          "material_name": "מים",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add water. Mix 5 min at 600 rpm."
+        },
+        {
+          "step_sequence": 2,
+          "material_name": "OROTAN 731",
+          "mixing_duration_min": 2,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add OROTAN 731. Mix 2 min at 600 rpm."
+        },
+        {
+          "step_sequence": 3,
+          "material_name": "COMBIZELL",
+          "mixing_duration_min": 10,
+          "mixing_speed_rpm": 1200,
+          "raw_step_instruction": "Add COMBIZELL. Mix 10 min at 1200 rpm."
+        },
+        {
+          "step_sequence": 4,
+          "material_name": "RM-825",
+          "mixing_duration_min": 2,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add RM-825. Mix 2 min at 600 rpm."
+        },
+        {
+          "step_sequence": 5,
+          "material_name": "AGITAN 80",
+          "mixing_duration_min": 20,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add AGITAN 80. Mix 20 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 6,
+          "material_name": "TIONA 595",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add TIONA 595. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 7,
+          "material_name": "CHARMOR PM 40",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add CHARMOR PM 40. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 8,
+          "material_name": "MELAFINE",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add MELAFINE. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 9,
+          "material_name": "EXOLIT AP435",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add EXOLIT AP435. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 10,
+          "material_name": "ENCOR 367",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add ENCOR 367 (binder). Mix 5 min at 600 rpm."
+        }
+      ],
+
+      "measurement": {
+        "test_date": "FILL_IN (YYYY-MM-DD)",
+        "days_since_production": "FILL_IN (number) or null",
+        "linkage_confidence": "REAL_RUN"
+      },
+
+      "outcome": {
+        "ph": "FILL_IN",
+        "viscosity_6rpm_cps": "FILL_IN",
+        "viscosity_12rpm_cps": "FILL_IN",
+        "viscosity_30rpm_cps": "FILL_IN",
+        "viscosity_60rpm_cps": "FILL_IN",
+        "separation_pct": null,
+        "color_delta_e": null,
+        "raw_outcome_notes": "CE-003-A baseline measurement."
+      }
+    },
+
+    {
+      "_batch_label": "CE-003-B — SPEED INCREASE on AGITAN 80 step",
+      "_changed_variable": "step 5 mixing_speed_rpm: 1400 → 1800 rpm",
+      "_expected_outcome": "If higher shear explains 003.1→003.2 increase, expect v6 > CE-003-A.",
+      "_unchanged_vs_A": "All steps identical to CE-003-A except step 5 speed.",
+
+      "formulation_source_id": "10.11.2022-003",
+      "batch_id": "CE-003-B",
+      "run_origin": "REAL",
+      "production_date": "FILL_IN (YYYY-MM-DD)",
+      "operator": "FILL_IN",
+      "production_temperature_c": "FILL_IN (number)",
+      "raw_process_notes": "Controlled experiment CE-003-B. AGITAN 80 step speed raised to 1800 rpm vs 1400 rpm in baseline.",
+      "foaming_event": false,
+
+      "steps": [
+        {
+          "step_sequence": 1,
+          "material_name": "מים",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add water. Mix 5 min at 600 rpm."
+        },
+        {
+          "step_sequence": 2,
+          "material_name": "OROTAN 731",
+          "mixing_duration_min": 2,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add OROTAN 731. Mix 2 min at 600 rpm."
+        },
+        {
+          "step_sequence": 3,
+          "material_name": "COMBIZELL",
+          "mixing_duration_min": 10,
+          "mixing_speed_rpm": 1200,
+          "raw_step_instruction": "Add COMBIZELL. Mix 10 min at 1200 rpm."
+        },
+        {
+          "step_sequence": 4,
+          "material_name": "RM-825",
+          "mixing_duration_min": 2,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add RM-825. Mix 2 min at 600 rpm."
+        },
+        {
+          "step_sequence": 5,
+          "material_name": "AGITAN 80",
+          "mixing_duration_min": 20,
+          "mixing_speed_rpm": 1800,
+          "_note": "CHANGED vs CE-003-A: speed 1400 → 1800 rpm",
+          "raw_step_instruction": "Add AGITAN 80. Mix 20 min at 1800 rpm. [CE-003-B: speed variable]"
+        },
+        {
+          "step_sequence": 6,
+          "material_name": "TIONA 595",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add TIONA 595. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 7,
+          "material_name": "CHARMOR PM 40",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add CHARMOR PM 40. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 8,
+          "material_name": "MELAFINE",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add MELAFINE. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 9,
+          "material_name": "EXOLIT AP435",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add EXOLIT AP435. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 10,
+          "material_name": "ENCOR 367",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add ENCOR 367 (binder). Mix 5 min at 600 rpm."
+        }
+      ],
+
+      "measurement": {
+        "test_date": "FILL_IN (YYYY-MM-DD)",
+        "days_since_production": "FILL_IN (number) or null",
+        "linkage_confidence": "REAL_RUN"
+      },
+
+      "outcome": {
+        "ph": "FILL_IN",
+        "viscosity_6rpm_cps": "FILL_IN",
+        "viscosity_12rpm_cps": "FILL_IN",
+        "viscosity_30rpm_cps": "FILL_IN",
+        "viscosity_60rpm_cps": "FILL_IN",
+        "separation_pct": null,
+        "color_delta_e": null,
+        "raw_outcome_notes": "CE-003-B: speed variation measurement."
+      }
+    },
+
+    {
+      "_batch_label": "CE-003-C — DURATION INCREASE on COMBIZELL step",
+      "_changed_variable": "step 3 mixing_duration_min: 10 → 20 min",
+      "_expected_outcome": "If longer dispersion time explains viscosity increase, expect v6 > CE-003-A.",
+      "_unchanged_vs_A": "All steps identical to CE-003-A except step 3 duration.",
+
+      "formulation_source_id": "10.11.2022-003",
+      "batch_id": "CE-003-C",
+      "run_origin": "REAL",
+      "production_date": "FILL_IN (YYYY-MM-DD)",
+      "operator": "FILL_IN",
+      "production_temperature_c": "FILL_IN (number)",
+      "raw_process_notes": "Controlled experiment CE-003-C. COMBIZELL dispersion extended to 20 min vs 10 min in baseline.",
+      "foaming_event": false,
+
+      "steps": [
+        {
+          "step_sequence": 1,
+          "material_name": "מים",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add water. Mix 5 min at 600 rpm."
+        },
+        {
+          "step_sequence": 2,
+          "material_name": "OROTAN 731",
+          "mixing_duration_min": 2,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add OROTAN 731. Mix 2 min at 600 rpm."
+        },
+        {
+          "step_sequence": 3,
+          "material_name": "COMBIZELL",
+          "mixing_duration_min": 20,
+          "mixing_speed_rpm": 1200,
+          "_note": "CHANGED vs CE-003-A: duration 10 → 20 min",
+          "raw_step_instruction": "Add COMBIZELL. Mix 20 min at 1200 rpm. [CE-003-C: duration variable]"
+        },
+        {
+          "step_sequence": 4,
+          "material_name": "RM-825",
+          "mixing_duration_min": 2,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add RM-825. Mix 2 min at 600 rpm."
+        },
+        {
+          "step_sequence": 5,
+          "material_name": "AGITAN 80",
+          "mixing_duration_min": 20,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add AGITAN 80. Mix 20 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 6,
+          "material_name": "TIONA 595",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add TIONA 595. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 7,
+          "material_name": "CHARMOR PM 40",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add CHARMOR PM 40. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 8,
+          "material_name": "MELAFINE",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add MELAFINE. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 9,
+          "material_name": "EXOLIT AP435",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 1400,
+          "raw_step_instruction": "Add EXOLIT AP435. Mix 5 min at 1400 rpm."
+        },
+        {
+          "step_sequence": 10,
+          "material_name": "ENCOR 367",
+          "mixing_duration_min": 5,
+          "mixing_speed_rpm": 600,
+          "raw_step_instruction": "Add ENCOR 367 (binder). Mix 5 min at 600 rpm."
+        }
+      ],
+
+      "measurement": {
+        "test_date": "FILL_IN (YYYY-MM-DD)",
+        "days_since_production": "FILL_IN (number) or null",
+        "linkage_confidence": "REAL_RUN"
+      },
+
+      "outcome": {
+        "ph": "FILL_IN",
+        "viscosity_6rpm_cps": "FILL_IN",
+        "viscosity_12rpm_cps": "FILL_IN",
+        "viscosity_30rpm_cps": "FILL_IN",
+        "viscosity_60rpm_cps": "FILL_IN",
+        "separation_pct": null,
+        "color_delta_e": null,
+        "raw_outcome_notes": "CE-003-C: duration variation measurement."
+      }
+    }
+
+  ]
+}

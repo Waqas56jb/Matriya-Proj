@@ -1,9 +1,74 @@
-# Environment variables
-.env
-.env.local
-.env.*.local
+# =============================================================================
+# Matriya monorepo — applies to ALL subfolders:
+#   matriya-back/   (Node API)
+#   managment-back/
+#   managment-front/
+#   matriya-front/  (React)
+# =============================================================================
+# If Git still lists node_modules as "deleted/changed", those paths were
+# committed before this file existed. Run (from this repo root):
+#   git rm -r --cached node_modules 2>$null
+#   git rm -r --cached matriya-back/node_modules 2>$null
+#   git rm -r --cached matriya-front/node_modules 2>$null
+#   git rm -r --cached managment-back/node_modules 2>$null
+#   git rm -r --cached managment-front/node_modules 2>$null
+#   git add -A && git commit -m "Stop tracking node_modules"
+# =============================================================================
 
-# Python
+# --- Dependencies (never commit) ---
+node_modules/
+jspm_packages/
+bower_components/
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# --- Secrets & local env ---
+.env
+.env.*
+!.env.example
+!.env*.example
+*.pem
+*.key
+secrets.json
+
+# --- npm / yarn / pnpm ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+lerna-debug.log*
+
+# --- Build / test output ---
+dist/
+build/
+out/
+.next/
+.nuxt/
+.output/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+.cache/
+.parcel-cache/
+.turbo/
+*.tgz
+
+# --- Vercel / deploy ---
+.vercel/
+.netlify/
+
+# --- React / CRA (matriya-front) ---
+matriya-front/build/
+
+# --- Vite (managment-front) ---
+managment-front/dist/
+
+# --- Python (if any tooling) ---
 __pycache__/
 *.py[cod]
 *$py.class
@@ -14,19 +79,19 @@ env/
 ENV/
 .venv/
 
-# ChromaDB
+# --- DB / vectors / local stores ---
 chroma_db/
 *.sqlite
 *.sqlite3
-
-# Database files
 users.db
-*.db
 
-# Uploads
+# --- Uploads & temp (API local) ---
 uploads/
+tmp/
+temp/
+*.tmp
 
-# Large model files
+# --- ML / large caches ---
 *.bin
 *.safetensors
 *.pt
@@ -41,22 +106,23 @@ uploads/
 *.model
 *.weights
 
-# IDE
+# --- IDE / OS ---
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS
+*~
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Logs
+# --- Logs ---
 *.log
 logs/
 
-# Temporary files
-tmp/
-temp/
-*.tmp
+# --- Railway ---
+.railway/
+
+# --- OS junk ---
+ehthumbs.db
+Desktop.ini
