@@ -3,25 +3,27 @@
  */
 import axios from 'axios';
 
-// Use environment variable for API URL (REQUIRED)
-// Set REACT_APP_API_BASE_URL in .env file or Vercel environment variables
-// IMPORTANT: React environment variables must be available at BUILD TIME, not runtime
-let API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
+// Matriya API base URL — MUST be set at build time (CRA inlines env at compile).
+// Do not default to matriya-back.vercel.app: that deployment is legacy and rejects
+// flow=lab (returns session_id required). Point at YOUR Matriya API project, e.g.
+// https://matriya-proj-hfmn.vercel.app
+let API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || '').trim();
 
-// Debug logging (will be removed in production build)
 if (process.env.NODE_ENV === 'development') {
     console.log('REACT_APP_API_BASE_URL from env:', process.env.REACT_APP_API_BASE_URL);
 }
 
-// Fallback to default if not set
-if (!API_BASE_URL || API_BASE_URL.trim() === '') {
-    API_BASE_URL = 'https://matriya-back.vercel.app';
-    console.warn('REACT_APP_API_BASE_URL is not set! Using default: https://matriya-back.vercel.app');
-    console.warn('For local development, create a .env file with: REACT_APP_API_BASE_URL=http://localhost:8000');
-    console.warn('For production, set it in Vercel Dashboard → Settings → Environment Variables');
+if (!API_BASE_URL) {
+    if (process.env.NODE_ENV === 'development') {
+        API_BASE_URL = 'http://localhost:8000';
+        console.warn('REACT_APP_API_BASE_URL not set; using http://localhost:8000');
+    } else {
+        throw new Error(
+            'Matriya UI: REACT_APP_API_BASE_URL is missing at build time. In Vercel open the matriya-front project → Settings → Environment Variables → add REACT_APP_API_BASE_URL = your Matriya API URL (no trailing slash), then Redeploy.'
+        );
+    }
 }
 
-// Ensure no trailing slash
 API_BASE_URL = API_BASE_URL.replace(/\/$/, '');
 
 // Create axios instance
