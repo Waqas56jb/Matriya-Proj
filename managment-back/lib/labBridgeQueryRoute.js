@@ -7,15 +7,47 @@ import pg from 'pg';
 const { Pool } = pg;
 
 let poolSingleton = null;
+/** Last reason getPool() refused to connect (for 503 JSON). */
+let poolConfigHint = null;
+
+/**
+ * `pg` requires a standard postgres:// or postgresql:// URI.
+ * Vercel/Neon sometimes expose `neon://` or other schemes on DATABASE_URL — those throw "Invalid URL" on connect.
+ */
+function normalizePgConnectionString() {
+  poolConfigHint = null;
+  const raw = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+  if (raw == null || raw === '') return null;
+  let s = String(raw).replace(/^\uFEFF/, '').trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  if (!s) return null;
+  const scheme = s.split(':', 1)[0].toLowerCase();
+  if (scheme !== 'postgres' && scheme !== 'postgresql') {
+    poolConfigHint =
+      `Lab bridge needs POSTGRES_URL (or DATABASE_URL) as postgres://… or postgresql://… (node-pg). ` +
+      `Current scheme "${scheme || '(empty)'}" is not supported. ` +
+      `Copy the "URI" connection string from Supabase (or Neon "connection string" for psql), not the serverless/neon driver URL.`;
+    return null;
+  }
+  return s;
+}
 
 function getPool() {
   if (poolSingleton) return poolSingleton;
-  const conn = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+  const conn = normalizePgConnectionString();
   if (!conn) return null;
-  poolSingleton = new Pool({
-    connectionString: conn,
-    ssl: { rejectUnauthorized: false },
-  });
+  try {
+    poolSingleton = new Pool({
+      connectionString: conn,
+      ssl: { rejectUnauthorized: false },
+    });
+  } catch (e) {
+    poolSingleton = null;
+    poolConfigHint = e?.message || String(e);
+    return null;
+  }
   return poolSingleton;
 }
 
@@ -269,12 +301,27 @@ export async function labBridgeQueryHandler(req, res) {
 
   const pool = getPool();
   if (!pool) {
-    return res.status(503).json({ error: 'POSTGRES_URL or DATABASE_URL is not configured for lab bridge.' });
+    return res.status(503).json({
+      error: poolConfigHint || 'POSTGRES_URL or DATABASE_URL is not configured for lab bridge.',
+    });
   }
 
   try {
     if (type === 'version_comparison') {
-      const client = await pool.connect();
+      let client;
+      try {
+        client = await pool.connect();
+      } catch (e) {
+        const msg = e?.message || String(e);
+        const hint =
+          /invalid url/i.test(msg) || /invalid URL/i.test(msg)
+            ? ' Usually DATABASE_URL uses a non-postgres scheme (e.g. neon://) or a broken string — set POSTGRES_URL to the Supabase/Postgres "URI" (postgres://…).'
+            : '';
+        console.error('[lab/query] pool.connect:', msg);
+        return res.status(503).json({
+          error: `Lab database connection failed: ${msg}.${hint}`,
+        });
+      }
       try {
         const body = await handleVersionComparison(
           client,
