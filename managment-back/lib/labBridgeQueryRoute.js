@@ -117,8 +117,9 @@ async function loadMaterialDelta(client, formIdA, formIdB) {
   const mapB = {};
   for (const r of rows) {
     const t = String(r.material_name || '');
-    if (r.formulation_id === formIdA) mapA[t] = r.fraction;
-    if (r.formulation_id === formIdB) mapB[t] = r.fraction;
+    const fid = String(r.formulation_id);
+    if (fid === String(formIdA)) mapA[t] = r.fraction;
+    if (fid === String(formIdB)) mapB[t] = r.fraction;
   }
   const keys = new Set([...Object.keys(mapA), ...Object.keys(mapB)]);
   const changed = [];

@@ -39,7 +39,7 @@ class Settings {
     // Document Processing — Vercel serverless: only /tmp is writable. Do not use ./uploads even if UPLOAD_DIR is copied from local .env.
     this.UPLOAD_DIR = resolveUploadDir();
     this.MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024; // 50MB
-    this.ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".doc", ".xlsx", ".xls"];
+    this.ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.txt', '.doc', '.xlsx', '.xls', '.jpg', '.jpeg', '.png', '.webp'];
     
     // Chunking Settings
     this.CHUNK_SIZE = parseInt(process.env.CHUNK_SIZE) || 500;

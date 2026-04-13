@@ -32,6 +32,10 @@ OPENAI_API_KEY=your-openai-api-key
 # Same value as MANEGER_MATERIALS_SUMMARY_SERVER_KEY on maneger-back — enables aggregate URL without user JWT + Matriya forwards it on server calls.
 # MATRIYA_MANAGEMENT_MATERIALS_KEY=use-a-long-random-string-match-maneger
 
+# Lab bridge (flow=lab on POST /api/research/search): management-back base URL, no trailing slash.
+# Vercel example: MANAGEMENT_BACK_URL=https://your-managment-back.vercel.app
+# MANAGEMENT_BACK_URL=http://localhost:8001
+
 # JWT Secret (generate a random string)
 JWT_SECRET=your-random-secret-key-here
 

@@ -29,7 +29,23 @@ class DocumentProcessor {
       '.txt': this._processTxt.bind(this),
       '.xlsx': this._processExcel.bind(this),
       '.xls': this._processExcel.bind(this),
+      '.jpg': this._processImagePlaceholder.bind(this),
+      '.jpeg': this._processImagePlaceholder.bind(this),
+      '.png': this._processImagePlaceholder.bind(this),
+      '.webp': this._processImagePlaceholder.bind(this),
     };
+  }
+
+  /** Raster images: no text layer — index a short placeholder so uploads register in the document list (Vercel-safe). */
+  async _processImagePlaceholder(filePathObj) {
+    const base = path.basename(filePathObj);
+    const ext = path.extname(filePathObj).toLowerCase();
+    return sanitizeForUtf8(
+      `[Image file: ${base}]\n` +
+        `Format ${ext}: binary image — no extractable text for RAG. ` +
+        `For full-text search, upload PDF, DOCX, TXT, or Excel. ` +
+        `This file is still listed so you can track uploads and attach context manually.`
+    );
   }
 
   async processFile(filePath) {

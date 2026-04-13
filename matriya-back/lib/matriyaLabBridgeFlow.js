@@ -105,6 +105,38 @@ function internalMatriyaBaseUrl() {
 /**
  * Handle flow=lab on research search — bridge only, no RAG. Response body = composeAnswer(...) only.
  */
+async function composeAnswerSafe(query, labResult, externalData, opts) {
+  try {
+    return await composeAnswer(query, labResult, externalData, opts);
+  } catch (e) {
+    const msg = e?.message || String(e);
+    try {
+      return await composeAnswer(query, null, null, {
+        ...opts,
+        skipExternalFetch: true,
+        bridgeFailureReason: `Answer composer error: ${msg}`,
+      });
+    } catch {
+      return {
+        answer: `Lab flow error: ${msg}`,
+        decision_status: 'INSUFFICIENT_DATA',
+        evidence: {
+          run_ids: [],
+          baseline_run_id: null,
+          data_grade: 'HISTORICAL_REFERENCE',
+          delta_summary: {},
+          threshold: null,
+        },
+        external_context: [],
+        blocked_reason: `Answer composer error: ${msg}`,
+        next_step: 'Review server logs and lab contract; verify MANAGEMENT_BACK_URL and management POSTGRES_URL.',
+        constraint_rules: [],
+        routing: LAB_FLOW_ROUTING,
+      };
+    }
+  }
+}
+
 export async function handleLabBridgeFlow(req, res, { query, userId: _userId }) {
   const skipExt = process.env.ANSWER_COMPOSER_SKIP_EXTERNAL === '1';
   const internalApi = internalMatriyaBaseUrl();
@@ -116,7 +148,7 @@ export async function handleLabBridgeFlow(req, res, { query, userId: _userId }) 
 
   const base = getManagementBackBaseUrl();
   if (!base) {
-    const body = await composeAnswer(query, null, null, {
+    const body = await composeAnswerSafe(query, null, null, {
       ...composerOpts,
       skipExternalFetch: true,
       bridgeFailureReason:
@@ -127,7 +159,7 @@ export async function handleLabBridgeFlow(req, res, { query, userId: _userId }) 
 
   const params = labBridgeParamsFromRequest(req);
   if (!params.type) {
-    const body = await composeAnswer(query, null, null, {
+    const body = await composeAnswerSafe(query, null, null, {
       ...composerOpts,
       skipExternalFetch: true,
       bridgeFailureReason:
@@ -154,20 +186,24 @@ export async function handleLabBridgeFlow(req, res, { query, userId: _userId }) 
     });
 
     if (status >= 400) {
-      const body = await composeAnswer(query, null, null, {
+      const detail =
+        typeof data === 'object' && data && data.error != null ? String(data.error) : '';
+      const body = await composeAnswerSafe(query, null, null, {
         ...composerOpts,
         skipExternalFetch: true,
-        bridgeFailureReason: `Lab bridge upstream returned HTTP ${status}.`,
+        bridgeFailureReason: `Lab bridge upstream returned HTTP ${status}${detail ? `: ${detail}` : ''}.`,
       });
+      if (status === 503) return res.status(503).json(withLabFlowRouting(body));
+      if (status === 400) return res.status(400).json(withLabFlowRouting(body));
       return res.status(502).json(withLabFlowRouting(body));
     }
 
     const contract = data;
-    const body = await composeAnswer(query, contract, null, composerOpts);
+    const body = await composeAnswerSafe(query, contract, null, composerOpts);
     return res.json(withLabFlowRouting(body));
   } catch (e) {
     const msg = e.response?.data?.error || e.message || 'bridge request failed';
-    const body = await composeAnswer(query, null, null, {
+    const body = await composeAnswerSafe(query, null, null, {
       ...composerOpts,
       skipExternalFetch: true,
       bridgeFailureReason: `Lab bridge request failed: ${msg}`,

@@ -968,7 +968,7 @@ async function handleMatriyaSearch(req, res) {
     // Milestone 1 — Lab queries: structured bridge only (never document RAG).
     // Runs whenever flow=lab (even if generate_answer=false) so routing cannot fall through to RAG by mistake.
     if (labFlow) {
-      return handleLabBridgeFlow(req, res, { query, userId });
+      return await handleLabBridgeFlow(req, res, { query, userId });
     }
 
     if (generateAnswer && documentFlow) {

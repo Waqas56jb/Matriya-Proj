@@ -9,8 +9,8 @@ import './UploadTab.css';
 const ASK_EVIDENCE_TITLE = 'מקורות מהמסמכים (ציטוטים)';
 const ASK_EVIDENCE_HINT = 'קטעים ששימשו כבסיס לתשובה — לשקיפות וביקורת.';
 
-const ACCEPT = '.pdf,.docx,.txt,.doc,.xlsx,.xls';
-const ACCEPT_LIST = ['pdf', 'docx', 'txt', 'doc', 'xlsx', 'xls'];
+const ACCEPT = '.pdf,.docx,.txt,.doc,.xlsx,.xls,.jpg,.jpeg,.png,.webp';
+const ACCEPT_LIST = ['pdf', 'docx', 'txt', 'doc', 'xlsx', 'xls', 'jpg', 'jpeg', 'png', 'webp'];
 
 /** Tells matriya-back to skip debounced OpenAI auto-sync — UI runs POST /gpt-rag/sync itself. */
 const INGEST_OPT_OUT_AUTO_GPT_SYNC = { 'X-Matriya-Client-Gpt-Sync': '1' };
@@ -18,7 +18,18 @@ const INGEST_OPT_OUT_AUTO_GPT_SYNC = { 'X-Matriya-Client-Gpt-Sync': '1' };
 function getFileType(filename) {
     if (!filename) return '—';
     const ext = filename.split('.').pop()?.toLowerCase() || '';
-    const labels = { pdf: 'PDF', docx: 'DOCX', doc: 'DOC', txt: 'TXT', xlsx: 'XLSX', xls: 'XLS' };
+    const labels = {
+        pdf: 'PDF',
+        docx: 'DOCX',
+        doc: 'DOC',
+        txt: 'TXT',
+        xlsx: 'XLSX',
+        xls: 'XLS',
+        jpg: 'JPG',
+        jpeg: 'JPEG',
+        png: 'PNG',
+        webp: 'WEBP'
+    };
     return labels[ext] || ext.toUpperCase() || '—';
 }
 
