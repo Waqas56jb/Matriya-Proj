@@ -80,6 +80,163 @@ function emptyVersionComparison(blocked) {
   };
 }
 
+function emptyFormulationDelta(blocked) {
+  return {
+    query_type: 'formulation_delta',
+    source_run_ids: [],
+    baseline_run_id: null,
+    data_grade: 'NO_DATA',
+    run_type: null,
+    conclusion_status: 'INSUFFICIENT_DATA',
+    delta_summary: {},
+    blocked_reason: blocked,
+    source_metadata: {},
+    detail: {},
+  };
+}
+
+function isDdMmYyyy(s) {
+  return /^\d{2}\.\d{2}\.\d{4}$/.test(String(s || '').trim());
+}
+
+async function findFormulationBySourceIdOrDate(client, token, base_id = null) {
+  const t = str(token);
+  if (!t) return null;
+  const byDate = isDdMmYyyy(t);
+  const params = [];
+  let where = '';
+  if (byDate) {
+    params.push(`${t}-%`);
+    where = `f.source_id LIKE $1`;
+  } else {
+    params.push(t);
+    where = `f.source_id = $1 OR f.raw_source_id = $1`;
+  }
+  if (base_id) {
+    const baseMatch = baseIdSqlMatch(2);
+    params.push(str(base_id));
+    where = `${where} AND ${baseMatch}`;
+  }
+  const { rows } = await client.query(
+    `SELECT f.id, f.source_id, f.raw_source_id, f.base_id, f.version, f.source_file, f.composition_scale
+     FROM formulations f
+     WHERE ${where}
+     ORDER BY f.created_at DESC, f.source_id DESC
+     LIMIT 1`,
+    params
+  );
+  return rows && rows[0] ? rows[0] : null;
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function formatDeltaLine(name, pctA, pctB) {
+  const a = round2(pctA);
+  const b = round2(pctB);
+  const d = round2(b - a);
+  const sign = d > 0 ? '+' : '';
+  return `- ${name}: ${a.toFixed(2)} → ${b.toFixed(2)} (${sign}${d.toFixed(2)}%)`;
+}
+
+async function handleFormulationDelta(client, base_id, id_a, id_b) {
+  const aTok = str(id_a);
+  const bTok = str(id_b);
+  const base = str(base_id);
+  if (!aTok || !bTok) {
+    return emptyFormulationDelta(
+      'formulation_delta requires id_a and id_b (source_id like 27.10.2022-001 or date like 27.10.2022).'
+    );
+  }
+  const fa = await findFormulationBySourceIdOrDate(client, aTok, base || null);
+  const fb = await findFormulationBySourceIdOrDate(client, bTok, base || null);
+  if (!fa || !fb) {
+    return emptyFormulationDelta(`Could not find formulations for "${aTok}" and/or "${bTok}".`);
+  }
+
+  const { rows } = await client.query(
+    `SELECT formulation_id, material_name, fraction::float AS fraction
+     FROM formulation_materials
+     WHERE formulation_id = ANY($1::uuid[])`,
+    [[fa.id, fb.id]]
+  );
+  const mapA = new Map();
+  const mapB = new Map();
+  for (const r of rows) {
+    const name = String(r.material_name || '').trim();
+    if (!name) continue;
+    const fid = String(r.formulation_id);
+    if (fid === String(fa.id)) mapA.set(name, Number(r.fraction));
+    if (fid === String(fb.id)) mapB.set(name, Number(r.fraction));
+  }
+
+  const scaleA = Number(fa.composition_scale) || 1;
+  const scaleB = Number(fb.composition_scale) || 1;
+  const keys = new Set([...mapA.keys(), ...mapB.keys()]);
+
+  const changed = [];
+  const added = [];
+  const removed = [];
+  for (const name of keys) {
+    const fracA = mapA.has(name) ? mapA.get(name) : null;
+    const fracB = mapB.has(name) ? mapB.get(name) : null;
+    const pctA = fracA != null && Number.isFinite(fracA) ? (fracA / scaleA) * 100 : null;
+    const pctB = fracB != null && Number.isFinite(fracB) ? (fracB / scaleB) * 100 : null;
+    if (pctA == null && pctB == null) continue;
+    if (pctA == null && pctB != null) {
+      added.push({ material: name, pctA: null, pctB });
+      continue;
+    }
+    if (pctA != null && pctB == null) {
+      removed.push({ material: name, pctA, pctB: null });
+      continue;
+    }
+    const delta = pctB - pctA;
+    if (Math.abs(delta) > 1e-6) {
+      changed.push({ material: name, pctA, pctB, delta });
+    }
+  }
+
+  changed.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
+  added.sort((x, y) => x.material.localeCompare(y.material));
+  removed.sort((x, y) => x.material.localeCompare(y.material));
+
+  const delta_lines = [
+    ...changed.map((r) => formatDeltaLine(r.material, r.pctA, r.pctB)),
+    ...(added.length ? [`- New components: ${added.map((x) => x.material).join(', ')}`] : []),
+    ...(removed.length ? [`- Removed components: ${removed.map((x) => x.material).join(', ')}`] : []),
+  ];
+
+  return {
+    query_type: 'formulation_delta',
+    source_run_ids: [String(fa.source_id), String(fb.source_id)],
+    baseline_run_id: null,
+    data_grade: 'HISTORICAL_REFERENCE',
+    run_type: null,
+    conclusion_status: delta_lines.length ? 'OK' : 'INSUFFICIENT_DATA',
+    delta_summary: {},
+    blocked_reason: delta_lines.length ? null : 'No component differences detected (or no materials found).',
+    source_metadata: {
+      base_id: base || null,
+      id_a: aTok,
+      id_b: bTok,
+      matched_a: fa.source_id,
+      matched_b: fb.source_id,
+      source_file_a: fa.source_file,
+      source_file_b: fb.source_file,
+    },
+    detail: {
+      composition_delta: {
+        changed,
+        added,
+        removed,
+        delta_lines,
+      },
+    },
+  };
+}
+
 /**
  * @param {number|null} run
  * @param {number|null} baseline
@@ -328,6 +485,34 @@ export async function labBridgeQueryHandler(req, res) {
           req.query.base_id,
           req.query.version_a,
           req.query.version_b
+        );
+        return res.json(body);
+      } finally {
+        client.release();
+      }
+    }
+
+    if (type === 'formulation_delta') {
+      let client;
+      try {
+        client = await pool.connect();
+      } catch (e) {
+        const msg = e?.message || String(e);
+        const hint =
+          /invalid url/i.test(msg) || /invalid URL/i.test(msg)
+            ? ' Usually DATABASE_URL uses a non-postgres scheme (e.g. neon://) or a broken string — set POSTGRES_URL to the Supabase/Postgres "URI" (postgres://…).'
+            : '';
+        console.error('[lab/query] pool.connect:', msg);
+        return res.status(503).json({
+          error: `Lab database connection failed: ${msg}.${hint}`,
+        });
+      }
+      try {
+        const body = await handleFormulationDelta(
+          client,
+          req.query.base_id,
+          req.query.id_a,
+          req.query.id_b
         );
         return res.json(body);
       } finally {

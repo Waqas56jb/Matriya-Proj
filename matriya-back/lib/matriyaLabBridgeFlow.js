@@ -44,6 +44,8 @@ export function labBridgeParamsFromRequest(req) {
     base_id: pick('base_id'),
     version_a: pick('version_a'),
     version_b: pick('version_b'),
+    id_a: pick('id_a'),
+    id_b: pick('id_b'),
     metric: pick('metric') || 'viscosity',
   };
 }
@@ -175,6 +177,8 @@ export async function handleLabBridgeFlow(req, res, { query, userId: _userId }) 
     ...(params.base_id && { base_id: params.base_id }),
     ...(params.version_a && { version_a: params.version_a }),
     ...(params.version_b && { version_b: params.version_b }),
+    ...(params.id_a && { id_a: params.id_a }),
+    ...(params.id_b && { id_b: params.id_b }),
     ...(params.metric && { metric: params.metric }),
   };
 

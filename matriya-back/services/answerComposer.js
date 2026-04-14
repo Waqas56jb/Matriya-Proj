@@ -44,6 +44,16 @@ export function buildDecisionStatus(labResult) {
     return 'INSUFFICIENT_DATA';
   }
 
+  // Formulation delta is evidence-backed by formulation_materials (not production_runs).
+  // Decision here is informational only; never VALID_CONCLUSION.
+  if (labResult.query_type === 'formulation_delta') {
+    const lines = labResult.detail?.composition_delta?.delta_lines;
+    if (Array.isArray(lines) && lines.length > 0) {
+      return 'REFERENCE_ONLY';
+    }
+    return 'INSUFFICIENT_DATA';
+  }
+
   const ids = Array.isArray(labResult.source_run_ids) ? labResult.source_run_ids : [];
   if (ids.length === 0) {
     return 'INSUFFICIENT_DATA';
@@ -147,6 +157,15 @@ function buildEvidence(labResult, decisionStatus) {
 }
 
 function buildNaturalLanguageAnswer(query, labResult, decisionStatus, evidence) {
+  // Delta/Comparison layer (David): show computed component deltas, not copied text.
+  if (labResult?.query_type === 'formulation_delta') {
+    const lines = labResult.detail?.composition_delta?.delta_lines;
+    if (Array.isArray(lines) && lines.length > 0) {
+      return lines.join('\n');
+    }
+    return 'אין במערכת מידע תומך לשאלה זו.';
+  }
+
   const thr = evidence.threshold;
   const mdRaw = labResult?.delta_summary?.max_delta_pct;
   const mdNum = mdRaw == null ? NaN : Number(mdRaw);

@@ -45,6 +45,8 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
     const [labBaseId, setLabBaseId] = useState('BASE-003');
     const [labVersionA, setLabVersionA] = useState('003.1');
     const [labVersionB, setLabVersionB] = useState('003.2');
+    const [labIdA, setLabIdA] = useState('27.10.2022');
+    const [labIdB, setLabIdB] = useState('28.09.2023');
     const [preJustification, setPreJustification] = useState('');
     /** Kernel v1.6 – optional JSON (POST /api/research/search when any block is non-empty). */
     const [kernelSignalsJson, setKernelSignalsJson] = useState('');
@@ -142,6 +144,8 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
                             base_id: (labBaseId || 'BASE-003').trim(),
                             version_a: (labVersionA || '003.1').trim(),
                             version_b: (labVersionB || '003.2').trim(),
+                            id_a: (labIdA || '').trim(),
+                            id_b: (labIdB || '').trim(),
                         },
                         { timeout: 120000 }
                     );
@@ -439,7 +443,7 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
                                     className="search-input"
                                     value={labQueryType}
                                     onChange={(e) => setLabQueryType(e.target.value)}
-                                    placeholder="version_comparison"
+                                    placeholder="version_comparison | formulation_delta"
                                 />
                             </label>
                             <label className="lab-field">
@@ -467,6 +471,24 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
                                     value={labVersionB}
                                     onChange={(e) => setLabVersionB(e.target.value)}
                                     placeholder="003.2"
+                                />
+                            </label>
+                            <label className="lab-field">
+                                <span className="lab-field-label">id_a (date or source_id)</span>
+                                <input
+                                    className="search-input"
+                                    value={labIdA}
+                                    onChange={(e) => setLabIdA(e.target.value)}
+                                    placeholder="27.10.2022 or 27.10.2022-001"
+                                />
+                            </label>
+                            <label className="lab-field">
+                                <span className="lab-field-label">id_b (date or source_id)</span>
+                                <input
+                                    className="search-input"
+                                    value={labIdB}
+                                    onChange={(e) => setLabIdB(e.target.value)}
+                                    placeholder="28.09.2023 or 28.09.2023-017"
                                 />
                             </label>
                         </div>
