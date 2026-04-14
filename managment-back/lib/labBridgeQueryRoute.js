@@ -258,7 +258,9 @@ function channelDelta(run, baseline) {
   if (b === 0) {
     return { status: 'INCOMPARABLE', run_value: r, baseline_value: b, delta_pct: null };
   }
-  const delta_pct = Math.round(((r - b) / b) * 1e4) / 1e4;
+  // delta_pct is in PERCENT (0-100 scale) so it can be compared directly to threshold (e.g. 10%).
+  // Formula: (run - baseline) / baseline * 100, rounded to 2 decimal places.
+  const delta_pct = Math.round(((r - b) / b) * 1e4) / 1e2;
   return { status: 'COMPARED', run_value: r, baseline_value: b, delta_pct };
 }
 
