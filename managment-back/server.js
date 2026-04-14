@@ -38,7 +38,7 @@ import {
 } from './lib/labEmailImportValidation.js';
 import { deleteManagementVectorByFilename } from './lib/managementRagDelete.js';
 import { sendLabImportIncompleteEmail } from './lib/sendLabImportIncompleteEmail.js';
-import { labBridgeQueryHandler } from './lib/labBridgeQueryRoute.js';
+import { labBridgeQueryHandler, labHealthHandler } from './lib/labBridgeQueryRoute.js';
 /** Do not static-import pdf-to-img: it loads pdfjs-dist which needs canvas/DOM and crashes Vercel cold start. */
 
 const PORT = parseInt(process.env.PORT, 10) || 8001;
@@ -350,6 +350,7 @@ app.get('/', (req, res) => res.json({ service: 'maneger-back', health: '/health'
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.get('/favicon.png', (req, res) => res.status(204).end());
 app.get('/api/lab/query', labBridgeQueryHandler);
+app.get('/api/lab/health', labHealthHandler);
 
 // ---------- Projects ----------
 app.get('/api/projects', async (req, res) => {

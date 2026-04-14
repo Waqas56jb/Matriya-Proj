@@ -526,3 +526,49 @@ export async function labBridgeQueryHandler(req, res) {
     return res.status(500).json({ error: e.message || 'lab query failed' });
   }
 }
+
+/**
+ * GET /api/lab/health
+ * Verifies POSTGRES_URL is set and DB is reachable.
+ * Returns { ok, db_status, hint? } — safe for public health-check polling.
+ */
+export async function labHealthHandler(req, res) {
+  const raw = process.env.POSTGRES_URL || process.env.DATABASE_URL || '';
+  if (!raw) {
+    return res.status(503).json({
+      ok: false,
+      db_status: 'not_configured',
+      hint: 'POSTGRES_URL (or DATABASE_URL) is not set. Go to Vercel → managment-back project → Environment Variables and add POSTGRES_URL = postgresql://... (Supabase URI).',
+    });
+  }
+
+  const pool = getPool();
+  if (!pool) {
+    return res.status(503).json({
+      ok: false,
+      db_status: 'invalid_url',
+      hint: poolConfigHint || 'POSTGRES_URL scheme is not postgres:// or postgresql://. Copy the "URI" from Supabase → Project Settings → Database.',
+    });
+  }
+
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('SELECT 1');
+    return res.json({ ok: true, db_status: 'connected' });
+  } catch (e) {
+    const msg = e?.message || String(e);
+    return res.status(503).json({
+      ok: false,
+      db_status: 'connection_failed',
+      error: msg,
+      hint: /password authentication/i.test(msg)
+        ? 'Wrong password in POSTGRES_URL. Reset it in Supabase → Project Settings → Database → Reset password.'
+        : /ENOTFOUND|ETIMEDOUT/i.test(msg)
+        ? 'Host not reachable. Use the Supabase Transaction Pooler URI (port 6543), not the direct connection (port 5432) — Vercel blocks direct Supabase connections.'
+        : 'Check POSTGRES_URL in Vercel env vars. Must be postgresql://[user]:[password]@[host]:[port]/[db]?sslmode=require',
+    });
+  } finally {
+    client?.release();
+  }
+}
