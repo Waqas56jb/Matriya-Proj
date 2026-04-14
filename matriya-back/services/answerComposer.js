@@ -19,6 +19,7 @@ export const ALLOWED_DECISION_STATUSES = [
   'INSUFFICIENT_DATA',
   'STRUCTURAL_INCOMPLETE',
   'REFERENCE_ONLY',
+  'NO_CHANGE',
 ];
 
 const DEFAULT_THRESHOLD_PCT = parseFloat(process.env.LAB_VISCOSITY_THRESHOLD_PCT || '10', 10) || 10;
@@ -42,6 +43,12 @@ export function decideEfficacyFromDelta(maxDeltaPct, thresholdPct) {
 export function buildDecisionStatus(labResult) {
   if (!labResult || typeof labResult !== 'object') {
     return 'INSUFFICIENT_DATA';
+  }
+
+  // NO_CHANGE: version_a === version_b — deterministic logical result, no DB/RAG needed.
+  // Must be checked before the source_run_ids gate to avoid falling to INSUFFICIENT_DATA.
+  if (labResult.conclusion_status === 'NO_CHANGE') {
+    return 'NO_CHANGE';
   }
 
   // Formulation delta is evidence-backed by formulation_materials (not production_runs).
@@ -157,6 +164,13 @@ function buildEvidence(labResult, decisionStatus) {
 }
 
 function buildNaturalLanguageAnswer(query, labResult, decisionStatus, evidence) {
+  // Deterministic short-circuit: same version vs itself → zero delta, no computation needed.
+  if (decisionStatus === 'NO_CHANGE') {
+    const va = labResult?.source_metadata?.version_a ?? 'A';
+    const vb = labResult?.source_metadata?.version_b ?? 'B';
+    return `version_a (${va}) = version_b (${vb}) → max_delta_pct = 0 → NO_CHANGE`;
+  }
+
   // Delta/Comparison layer (David): show computed component deltas, not copied text.
   if (labResult?.query_type === 'formulation_delta') {
     const lines = labResult.detail?.composition_delta?.delta_lines;
@@ -209,7 +223,7 @@ function buildNaturalLanguageAnswer(query, labResult, decisionStatus, evidence) 
 }
 
 export function generateBlockedReason(labResult, decisionStatus) {
-  if (decisionStatus === 'VALID_CONCLUSION') {
+  if (decisionStatus === 'VALID_CONCLUSION' || decisionStatus === 'NO_CHANGE') {
     return null;
   }
   if (labResult?.blocked_reason) {
@@ -235,6 +249,8 @@ export function generateNextStep(labResult, decisionStatus) {
   switch (decisionStatus) {
     case 'VALID_CONCLUSION':
       return 'Proceed to production change control with cited REAL runs; retain provenance for audit.';
+    case 'NO_CHANGE':
+      return 'version_a and version_b are identical — no comparison is needed. Run the query with two distinct versions.';
     case 'INCONCLUSIVE':
       return 'Plan additional controlled REAL runs with declared single-variable delta vs an approved baseline.';
     case 'INSUFFICIENT_DATA':

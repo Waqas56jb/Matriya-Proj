@@ -343,6 +343,29 @@ async function handleVersionComparison(client, base_id, version_a, version_b) {
     return emptyVersionComparison('version_comparison requires base_id, version_a, and version_b.');
   }
 
+  // Deterministic short-circuit: same version compared against itself → zero delta, no DB needed.
+  if (va.toLowerCase() === vb.toLowerCase()) {
+    return {
+      query_type: 'version_comparison',
+      source_run_ids: [],
+      baseline_run_id: null,
+      data_grade: 'LOGICAL',
+      run_type: null,
+      conclusion_status: 'NO_CHANGE',
+      delta_summary: {
+        channels: [],
+        max_delta_pct: 0,
+        dominant_channel: null,
+        ph_run: null,
+        ph_baseline: null,
+        ph_delta: null,
+      },
+      blocked_reason: null,
+      source_metadata: { base_id: b, version_a: va, version_b: vb },
+      detail: { note: 'version_a equals version_b — no change by definition.' },
+    };
+  }
+
   const baseMatch = baseIdSqlMatch(1);
   const { rows: forms } = await client.query(
     `SELECT f.id, f.version
