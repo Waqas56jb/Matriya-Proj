@@ -437,17 +437,27 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
                     <div className="answer-mode-section lab-bridge-fields">
                         <h3 className="stage-heading">פרמטרים למעבדה (Lab Chain)</h3>
                         <div className="lab-field-grid">
+                            {/* Query type — always shown; drives which fields appear below */}
                             <label className="lab-field">
                                 <span className="lab-field-label">lab_query_type</span>
-                                <input
+                                <select
                                     className="search-input"
                                     value={labQueryType}
                                     onChange={(e) => setLabQueryType(e.target.value)}
-                                    placeholder="version_comparison | formulation_delta"
-                                />
+                                >
+                                    <option value="version_comparison">version_comparison</option>
+                                    <option value="formulation_delta">formulation_delta</option>
+                                </select>
                             </label>
+
+                            {/* base_id — shown for both types (optional scope filter) */}
                             <label className="lab-field">
-                                <span className="lab-field-label">base_id</span>
+                                <span className="lab-field-label">
+                                    base_id
+                                    {labQueryType === 'formulation_delta' && (
+                                        <span className="lab-field-optional"> (אופציונלי)</span>
+                                    )}
+                                </span>
                                 <input
                                     className="search-input"
                                     value={labBaseId}
@@ -455,45 +465,59 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
                                     placeholder="BASE-003"
                                 />
                             </label>
-                            <label className="lab-field">
-                                <span className="lab-field-label">version_a</span>
-                                <input
-                                    className="search-input"
-                                    value={labVersionA}
-                                    onChange={(e) => setLabVersionA(e.target.value)}
-                                    placeholder="003.1"
-                                />
-                            </label>
-                            <label className="lab-field">
-                                <span className="lab-field-label">version_b</span>
-                                <input
-                                    className="search-input"
-                                    value={labVersionB}
-                                    onChange={(e) => setLabVersionB(e.target.value)}
-                                    placeholder="003.2"
-                                />
-                            </label>
-                            <label className="lab-field">
-                                <span className="lab-field-label">id_a (date or source_id)</span>
-                                <input
-                                    className="search-input"
-                                    value={labIdA}
-                                    onChange={(e) => setLabIdA(e.target.value)}
-                                    placeholder="27.10.2022 or 27.10.2022-001"
-                                />
-                            </label>
-                            <label className="lab-field">
-                                <span className="lab-field-label">id_b (date or source_id)</span>
-                                <input
-                                    className="search-input"
-                                    value={labIdB}
-                                    onChange={(e) => setLabIdB(e.target.value)}
-                                    placeholder="28.09.2023 or 28.09.2023-017"
-                                />
-                            </label>
+
+                            {/* version_comparison fields — hidden for formulation_delta */}
+                            {labQueryType === 'version_comparison' && (
+                                <>
+                                    <label className="lab-field">
+                                        <span className="lab-field-label">version_a</span>
+                                        <input
+                                            className="search-input"
+                                            value={labVersionA}
+                                            onChange={(e) => setLabVersionA(e.target.value)}
+                                            placeholder="003.1"
+                                        />
+                                    </label>
+                                    <label className="lab-field">
+                                        <span className="lab-field-label">version_b</span>
+                                        <input
+                                            className="search-input"
+                                            value={labVersionB}
+                                            onChange={(e) => setLabVersionB(e.target.value)}
+                                            placeholder="003.2"
+                                        />
+                                    </label>
+                                </>
+                            )}
+
+                            {/* formulation_delta fields — hidden for version_comparison */}
+                            {labQueryType === 'formulation_delta' && (
+                                <>
+                                    <label className="lab-field">
+                                        <span className="lab-field-label">id_a (date or source_id)</span>
+                                        <input
+                                            className="search-input"
+                                            value={labIdA}
+                                            onChange={(e) => setLabIdA(e.target.value)}
+                                            placeholder="27.10.2022 or 27.10.2022-001"
+                                        />
+                                    </label>
+                                    <label className="lab-field">
+                                        <span className="lab-field-label">id_b (date or source_id)</span>
+                                        <input
+                                            className="search-input"
+                                            value={labIdB}
+                                            onChange={(e) => setLabIdB(e.target.value)}
+                                            placeholder="28.09.2023 or 28.09.2023-017"
+                                        />
+                                    </label>
+                                </>
+                            )}
                         </div>
                         <p className="stage-hint">
-                            שדה החיפוש נשלח כ־<code>query</code> (טקסט חופשי לתצוגה). השוואת גרסאות רצה לפי השדות למעלה.
+                            {labQueryType === 'formulation_delta'
+                                ? 'השוואת פורמולציות: id_a ו-id_b יכולים להיות תאריך (27.10.2022) או source_id מלא.'
+                                : 'השוואת גרסאות: base_id + version_a + version_b נדרשים.'}
                         </p>
                     </div>
                 )}

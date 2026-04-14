@@ -152,6 +152,12 @@
     color: #a0a0c0;
 }
 
+.lab-field-optional {
+    font-size: 0.72rem;
+    color: #7a7a9a;
+    margin-left: 4px;
+}
+
 .answer-mode-section {
     margin-bottom: 20px;
     padding: 14px 18px;
