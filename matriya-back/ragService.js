@@ -282,7 +282,8 @@ class RAGService {
           catalogFilenames
         });
         if (!hasFileSearchEvidence(snippets)) {
-          return [];
+          // No OpenAI evidence (e.g. file not yet synced) — fall through to pgvector below.
+          throw new Error('no_openai_evidence: falling back to pgvector');
         }
         const mapped = this._snippetsToSearchResults(snippets, nResults, query, '');
         if (mapped.length > 0) return mapped;
@@ -422,15 +423,8 @@ class RAGService {
           domainSnippets = snippets;
         }
         if (!hasFileSearchEvidence(domainSnippets)) {
-          return {
-            query,
-            results: [],
-            results_count: 0,
-            answer: null,
-            context_used: 0,
-            context: '',
-            error: 'No relevant documents found'
-          };
+          // No OpenAI domain evidence (e.g. file not yet synced to OpenAI) — fall through to pgvector.
+          throw new Error('no_openai_domain_evidence: falling back to pgvector');
         }
         const mapped = this._snippetsToSearchResults(domainSnippets, nResults, query, answerText || '');
         const genGate = evaluateConclusionBeforeGeneration(query, mapped);
