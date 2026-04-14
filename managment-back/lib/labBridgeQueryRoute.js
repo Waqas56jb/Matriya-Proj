@@ -498,13 +498,20 @@ export async function labBridgeQueryHandler(req, res) {
 
   try {
     if (type === 'version_comparison') {
-      // Deterministic short-circuit at handler level: same version vs itself → NO_CHANGE, no DB needed.
-      // This fires BEFORE pool.connect() so it works even if DB is unreachable.
-      const va_req = String(req.query.version_a ?? '').trim();
-      const vb_req = String(req.query.version_b ?? '').trim();
+      // Read version_a / version_b from query string OR body (handles both GET and POST).
+      const pick2 = (k) => {
+        const v = req.query[k] ?? (req.body && req.body[k]);
+        return v == null ? '' : String(v).trim();
+      };
+      const va_req   = pick2('version_a');
+      const vb_req   = pick2('version_b');
+      const base_req = pick2('base_id');
+      // Always log incoming values so Vercel logs show exactly what arrived.
+      console.error(`[lab/query] version_comparison: version_a="${va_req}" version_b="${vb_req}" base_id="${base_req}"`);
+
+      // Deterministic short-circuit: same version vs itself → NO_CHANGE, no DB needed.
       if (va_req && vb_req && va_req.toLowerCase() === vb_req.toLowerCase()) {
-        const base_req = String(req.query.base_id ?? '').trim();
-        console.error(`[lab/query] NO_CHANGE short-circuit: version_a="${va_req}" === version_b="${vb_req}"`);
+        console.error(`[lab/query] NO_CHANGE short-circuit triggered`);
         return res.json({
           query_type: 'version_comparison',
           source_run_ids: [],
@@ -541,12 +548,8 @@ export async function labBridgeQueryHandler(req, res) {
         });
       }
       try {
-        const body = await handleVersionComparison(
-          client,
-          req.query.base_id,
-          req.query.version_a,
-          req.query.version_b
-        );
+        // Pass the already-trimmed values (same ones checked above) to avoid re-parsing differences.
+        const body = await handleVersionComparison(client, base_req, va_req, vb_req);
         return res.json(body);
       } finally {
         client.release();
