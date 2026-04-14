@@ -248,7 +248,7 @@ export function generateBlockedReason(labResult, decisionStatus) {
 export function generateNextStep(labResult, decisionStatus) {
   switch (decisionStatus) {
     case 'VALID_CONCLUSION':
-      return 'Proceed to production change control with cited REAL runs; retain provenance for audit.';
+      return 'Data-level conclusion confirmed: delta ≥ threshold on a single REAL run. Conduct at least one replication run before initiating production change control.';
     case 'NO_CHANGE':
       return 'version_a and version_b are identical — no comparison is needed. Run the query with two distinct versions.';
     case 'INCONCLUSIVE':

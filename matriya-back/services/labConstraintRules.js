@@ -85,8 +85,13 @@ export function evaluateConstraintRulesForLab(lab) {
       rule_id: 'ISM-001',
       matched: true,
       confidence,
-      recommended_experiments: plan.recommended_experiments,
+      // Explicit separation (David): this block is a rule-based hypothesis, NOT a data-validated conclusion.
+      source: 'rule_based_hypothesis',
+      data_validated: false,
+      // 'hypothesis' is the canonical field; 'expected_failure_pattern' retained for backward compatibility.
+      hypothesis: plan.expected_failure_pattern,
       expected_failure_pattern: plan.expected_failure_pattern,
+      recommended_experiments: plan.recommended_experiments,
     });
   } catch {
     /* isolation: bad plan file must not break composer */

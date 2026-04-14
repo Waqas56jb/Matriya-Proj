@@ -498,6 +498,34 @@ export async function labBridgeQueryHandler(req, res) {
 
   try {
     if (type === 'version_comparison') {
+      // Deterministic short-circuit at handler level: same version vs itself → NO_CHANGE, no DB needed.
+      // This fires BEFORE pool.connect() so it works even if DB is unreachable.
+      const va_req = String(req.query.version_a ?? '').trim();
+      const vb_req = String(req.query.version_b ?? '').trim();
+      if (va_req && vb_req && va_req.toLowerCase() === vb_req.toLowerCase()) {
+        const base_req = String(req.query.base_id ?? '').trim();
+        console.error(`[lab/query] NO_CHANGE short-circuit: version_a="${va_req}" === version_b="${vb_req}"`);
+        return res.json({
+          query_type: 'version_comparison',
+          source_run_ids: [],
+          baseline_run_id: null,
+          data_grade: 'LOGICAL',
+          run_type: null,
+          conclusion_status: 'NO_CHANGE',
+          delta_summary: {
+            channels: [],
+            max_delta_pct: 0,
+            dominant_channel: null,
+            ph_run: null,
+            ph_baseline: null,
+            ph_delta: null,
+          },
+          blocked_reason: null,
+          source_metadata: { base_id: base_req, version_a: va_req, version_b: vb_req },
+          detail: { note: 'version_a equals version_b — no change by definition.' },
+        });
+      }
+
       let client;
       try {
         client = await pool.connect();
