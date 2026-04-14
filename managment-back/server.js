@@ -236,10 +236,27 @@ function getAllowedOrigins() {
   return DEFAULT_CORS_ORIGINS;
 }
 
+function shouldAllowVercelOriginsByDefault() {
+  // Security rule:
+  // - If user explicitly set CORS_ORIGINS, respect it strictly (no wildcard).
+  // - If not set, allow *.vercel.app so new frontend deployments don't break auth preflight.
+  const hasExplicitList = Boolean((process.env.CORS_ORIGINS || '').trim());
+  if (hasExplicitList) return false;
+  return Boolean(process.env.VERCEL_ENV || process.env.VERCEL_URL);
+}
+
 function isOriginAllowed(origin, allowedList) {
   if (!origin || typeof origin !== 'string') return false;
   if (allowedList.includes(origin)) return true;
   if (process.env.CORS_ALLOW_VERCEL_PREVIEWS === '1' || process.env.CORS_ALLOW_VERCEL_PREVIEWS === 'true') {
+    try {
+      const u = new URL(origin);
+      return u.protocol === 'https:' && u.hostname.endsWith('.vercel.app');
+    } catch (_) {
+      return false;
+    }
+  }
+  if (shouldAllowVercelOriginsByDefault()) {
     try {
       const u = new URL(origin);
       return u.protocol === 'https:' && u.hostname.endsWith('.vercel.app');
