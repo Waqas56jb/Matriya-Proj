@@ -940,6 +940,190 @@ ${fileContext}`
  *
  * POST /api/research/search — same behavior; body may include kernel_signals, data_anchors, methodology_flags (JSON objects or JSON strings).
  */
+
+function normalizeQueryText(q) {
+  return String(q || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function isSystemMetadataQuestion(query) {
+  const q = normalizeQueryText(query);
+  if (!q) return false;
+  // English
+  if (
+    /\bhow many (documents|docs|files)\b/.test(q) ||
+    /\b(document|documents|file|files)\b.*\b(count|total|number)\b/.test(q) ||
+    /\bwhat (file types|extensions)\b/.test(q) ||
+    /\bwhich file types\b/.test(q)
+  ) return true;
+  // Hebrew
+  if (
+    /כמה\s+(מסמכים|קבצים)\b/.test(q) ||
+    /\b(מסמכים|קבצים)\b.*\b(כמה|כמות|מספר|סך)\b/.test(q) ||
+    /(אילו|איזה)\s+(סוגי\s+קבצים|סיומות)\b/.test(q)
+  ) return true;
+
+  // Formulations count (handled deterministically from structured Excel text, not RAG)
+  if (/\bhow many\b.*\bformulations\b/.test(q) || /כמה\s+פורמול(ציות|ציות)\b/.test(q) || /\bמספר\s+פורמול/.test(q)) {
+    return true;
+  }
+  return false;
+}
+
+function countFormulationRowsFromIndexedExcelText(text) {
+  const t = String(text || '');
+  if (!t.trim()) return { count: 0, keys: [] };
+  const lines = t.split(/\r?\n/);
+  const seen = new Set();
+  const keys = [];
+  for (const lineRaw of lines) {
+    const line = String(lineRaw || '').trim();
+    if (!line) continue;
+    if (line.startsWith('[גיליון:') || line.startsWith('[')) continue;
+    if (!line.includes('\t')) continue;
+    // Require at least 2 percentage-like values in the row (composition-like).
+    const pctMatches = line.match(/\b\d{1,3}\.\d{2}%\b|\b0%\b|\b100%\b/g) || [];
+    if (pctMatches.length < 2) continue;
+    const firstCell = line.split('\t').map((c) => c.trim()).find(Boolean) || '';
+    const key = firstCell || line;
+    if (!seen.has(key)) {
+      seen.add(key);
+      if (keys.length < 20) keys.push(key);
+    }
+  }
+  return { count: seen.size, keys };
+}
+
+async function answerSystemMetadataQuestion(query, rag, filterMetadata = null) {
+  const q = normalizeQueryText(query);
+  const collection = await rag.getCollectionInfo();
+  const files = await rag.getFilesWithMetadata();
+  const filenames = (Array.isArray(files) ? files : []).map((f) => String(f?.filename || '').trim()).filter(Boolean);
+
+  // Optional single-file scope (when user picked a file in UI).
+  const scopedFilenames =
+    filterMetadata && typeof filterMetadata.filename === 'string' && filterMetadata.filename.trim()
+      ? filenames.filter((n) => n === filterMetadata.filename.trim())
+      : filenames;
+
+  const fileExts = [...new Set(scopedFilenames.map((n) => {
+    const base = n.split('/').filter(Boolean).pop() || n;
+    const idx = base.lastIndexOf('.');
+    return idx >= 0 ? base.slice(idx).toLowerCase() : '';
+  }).filter(Boolean))].sort();
+
+  // Formulations count: sum across Excel files by counting composition-like rows in indexed text.
+  if (q.includes('formulation') || q.includes('פורמול')) {
+    const excelNames = scopedFilenames.filter((n) => {
+      const base = n.split('/').filter(Boolean).pop() || n;
+      return /\.xlsx$/i.test(base) || /\.xls$/i.test(base);
+    });
+    if (excelNames.length === 0) {
+      return {
+        status: 422,
+        body: {
+          error: 'INSUFFICIENT_EVIDENCE',
+          status: 'INSUFFICIENT_EVIDENCE',
+          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+          routing: 'SYSTEM_METADATA',
+          query,
+          evidence: { excel_files: 0, formulation_rows: 0 }
+        }
+      };
+    }
+    let total = 0;
+    const perFile = [];
+    for (const fn of excelNames.slice(0, 30)) {
+      const full = await rag.getFullTextForFile(fn);
+      const { count, keys } = countFormulationRowsFromIndexedExcelText(full);
+      total += count;
+      perFile.push({ filename: fn, formulations_count: count, sample_keys: keys.slice(0, 5) });
+    }
+    return {
+      status: 200,
+      body: {
+        routing: 'SYSTEM_METADATA',
+        query,
+        answer: `נמצאו ${total} פורמולציות (נספר מתוך שורות הרכב בקובצי Excel המאונדקסים).`,
+        results_count: 0,
+        results: [],
+        sources: [],
+        evidence: {
+          method: 'excel_indexed_rows_with_percent_values',
+          excel_files: excelNames.length,
+          per_file: perFile
+        }
+      }
+    };
+  }
+
+  // Documents / files count.
+  if (q.includes('how many') || q.includes('כמה') || q.includes('count') || q.includes('מספר') || q.includes('כמות') || q.includes('סך')) {
+    const fileCount = scopedFilenames.length;
+    const chunkCount = (Array.isArray(files) ? files : []).reduce((sum, f) => sum + (Number(f?.chunks_count) || 0), 0);
+    const docCount = Number(collection?.document_count) || 0;
+    return {
+      status: 200,
+      body: {
+        routing: 'SYSTEM_METADATA',
+        query,
+        answer: `במערכת יש ${fileCount} קבצים ו-${docCount} קטעי אינדוקס (chunks).`,
+        results_count: 0,
+        results: [],
+        sources: [],
+        evidence: {
+          file_count: fileCount,
+          chunks_count: docCount,
+          chunks_count_sum_from_files: chunkCount,
+          file_types: fileExts
+        }
+      }
+    };
+  }
+
+  // File types / extensions.
+  if (q.includes('file type') || q.includes('extension') || q.includes('סוגי קבצים') || q.includes('סיומות')) {
+    if (fileExts.length === 0) {
+      return {
+        status: 422,
+        body: {
+          error: 'INSUFFICIENT_EVIDENCE',
+          status: 'INSUFFICIENT_EVIDENCE',
+          reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+          routing: 'SYSTEM_METADATA',
+          query,
+          evidence: { file_types: [] }
+        }
+      };
+    }
+    return {
+      status: 200,
+      body: {
+        routing: 'SYSTEM_METADATA',
+        query,
+        answer: `סוגי הקבצים במערכת: ${fileExts.join(', ')}`,
+        results_count: 0,
+        results: [],
+        sources: [],
+        evidence: { file_types: fileExts }
+      }
+    };
+  }
+
+  return {
+    status: 422,
+    body: {
+      error: 'INSUFFICIENT_EVIDENCE',
+      status: 'INSUFFICIENT_EVIDENCE',
+      reply: RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE,
+      routing: 'SYSTEM_METADATA',
+      query
+    }
+  };
+}
+
 async function handleMatriyaSearch(req, res) {
   const query = req.body?.query ?? req.query.query;
   if (!query) {
@@ -969,6 +1153,29 @@ async function handleMatriyaSearch(req, res) {
     // Runs whenever flow=lab (even if generate_answer=false) so routing cannot fall through to RAG by mistake.
     if (labFlow) {
       return await handleLabBridgeFlow(req, res, { query, userId });
+    }
+
+    // System / metadata routing (David): answer from DB/index only, never from RAG/LLM.
+    // This must happen BEFORE any document retrieval so we don't return "no information" for questions like "how many documents".
+    if (generateAnswer && isSystemMetadataQuestion(query)) {
+      let rag;
+      try {
+        rag = getRagService();
+      } catch (e) {
+        // If DB is not configured, return a clear 503 (this often surfaces as Vercel "Bad Gateway" to the client).
+        return res.status(503).json({
+          error: e.message || 'RAG service unavailable',
+          routing: 'SYSTEM_METADATA',
+          hint: 'Set POSTGRES_URL in Vercel (Production + Preview + Development) and redeploy.'
+        });
+      }
+      try {
+        const out = await answerSystemMetadataQuestion(query, rag, filterMetadata);
+        return res.status(out.status).json(out.body);
+      } catch (e) {
+        logger.error(`[system-metadata] failed: ${e.message}`);
+        return res.status(500).json({ error: e.message || 'system metadata query failed', routing: 'SYSTEM_METADATA' });
+      }
     }
 
     if (generateAnswer && documentFlow) {
