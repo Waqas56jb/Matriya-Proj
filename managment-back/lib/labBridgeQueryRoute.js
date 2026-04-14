@@ -19,8 +19,15 @@ function normalizePgConnectionString() {
   const raw = process.env.POSTGRES_URL || process.env.DATABASE_URL;
   if (raw == null || raw === '') return null;
   let s = String(raw).replace(/^\uFEFF/, '').trim();
+  // Strip surrounding quotes (common Vercel copy-paste mistake).
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     s = s.slice(1, -1).trim();
+  }
+  // Strip accidental "KEY=value" prefix — happens when someone pastes the full .env line
+  // e.g. "POSTGRES_URL=postgresql://..." instead of just "postgresql://..."
+  if (/^[A-Z_]+=.+/i.test(s)) {
+    const eqIdx = s.indexOf('=');
+    if (eqIdx !== -1) s = s.slice(eqIdx + 1).trim();
   }
   if (!s) return null;
   const scheme = s.split(':', 1)[0].toLowerCase();
@@ -28,7 +35,8 @@ function normalizePgConnectionString() {
     poolConfigHint =
       `Lab bridge needs POSTGRES_URL (or DATABASE_URL) as postgres://… or postgresql://… (node-pg). ` +
       `Current scheme "${scheme || '(empty)'}" is not supported. ` +
-      `Copy the "URI" connection string from Supabase (or Neon "connection string" for psql), not the serverless/neon driver URL.`;
+      `In Vercel → Environment Variables, the VALUE must be ONLY the URI string (e.g. postgresql://user:pass@host:6543/db), ` +
+      `NOT "POSTGRES_URL=postgresql://…". Do not include the variable name in the value field.`;
     return null;
   }
   return s;
