@@ -972,6 +972,69 @@ function isSystemMetadataQuestion(query) {
   return false;
 }
 
+/**
+ * Detects natural-language queries that must be handled by the Lab Engine (DB + computation),
+ * NOT by document RAG. Mirrors the existing isSystemMetadataQuestion guard.
+ *
+ * Patterns: version comparison, max delta, threshold pass/fail, formulation date-to-date diff.
+ */
+function isLabEngineQuestion(query) {
+  const q = normalizeQueryText(query);
+  if (!q) return false;
+  // Version comparison intent (e.g. "between version 003.1 and 003.2", "compare version X and Y")
+  if (
+    /\bbetween\s+version\s+[\d.]+\s+and\s+[\d.]+/.test(q) ||
+    /\bcompare\s+(version|versions)\b/.test(q) ||
+    /\bversion\s+[\d.]+\s+vs\.?\s+[\d.]+/.test(q) ||
+    /\bversion\s+comparison\b/.test(q)
+  ) return true;
+  // Delta / threshold intent (lab-specific vocabulary)
+  if (
+    /\bmax[\s_-]delta\b/.test(q) ||
+    /\bdelta[\s_-]percent(age)?\b/.test(q) ||
+    /\bdelta[\s_-]pct\b/.test(q) ||
+    /\bpass\s+(the\s+)?threshold\b/.test(q) ||
+    /\bfail\s+(the\s+)?threshold\b/.test(q) ||
+    /\bviscosity\s+delta\b/.test(q) ||
+    /\bproduction\s+run\s+comparison\b/.test(q)
+  ) return true;
+  // Formulation date-to-date diff (two DD.MM.YYYY dates in same query)
+  if (/\b\d{2}\.\d{2}\.\d{4}\b.*\b\d{2}\.\d{2}\.\d{4}\b/.test(q)) return true;
+  // Hebrew lab terms
+  if (
+    /דלתא\s+(מקסימל|אחוז|מקס)/.test(q) ||
+    /השוואת\s+(גרסאות|ריצות|פורמולציות)/.test(q) ||
+    /עבר\s+את\s+(הסף|הסף\s+המקסימל)/.test(q)
+  ) return true;
+  return false;
+}
+
+/**
+ * Extracts structured lab-bridge params from a natural-language lab query.
+ * Returns { type, base_id?, version_a?, version_b?, id_a?, id_b? } or null if params cannot be inferred.
+ */
+function extractLabEngineParams(query) {
+  const q = String(query || '').trim();
+  const ql = q.toLowerCase();
+  // Optional BASE-XXX extraction
+  const baseMatch = q.match(/\b(BASE-\d+)\b/i);
+  const base_id = baseMatch ? baseMatch[1].toUpperCase() : null;
+  // Version comparison: needs "version" keyword + two numeric version identifiers (e.g. 003.1, 003.2)
+  if (/\bversion\b/i.test(ql)) {
+    const versionNums = q.match(/\b(\d{1,4}\.\d+)\b/g) || [];
+    if (versionNums.length >= 2) {
+      return { type: 'version_comparison', base_id, version_a: versionNums[0], version_b: versionNums[1] };
+    }
+  }
+  // Formulation delta: two DD.MM.YYYY dates
+  const dateNums = q.match(/\b(\d{2}\.\d{2}\.\d{4})\b/g) || [];
+  if (dateNums.length >= 2) {
+    return { type: 'formulation_delta', base_id, id_a: dateNums[0], id_b: dateNums[1] };
+  }
+  // Max-delta / threshold without explicit version → can't extract safely
+  return null;
+}
+
 function countFormulationRowsFromIndexedExcelText(text) {
   const t = String(text || '');
   if (!t.trim()) return { count: 0, keys: [] };
@@ -1153,6 +1216,27 @@ async function handleMatriyaSearch(req, res) {
     // Runs whenever flow=lab (even if generate_answer=false) so routing cannot fall through to RAG by mistake.
     if (labFlow) {
       return await handleLabBridgeFlow(req, res, { query, userId });
+    }
+
+    // Lab Engine auto-routing (David): detect version comparison / delta / threshold queries and route
+    // directly to Lab Engine even when the user did not explicitly set flow=lab.
+    // Must run BEFORE document-flow / research-flow so the query never hits RAG by mistake.
+    if (!documentFlow && isLabEngineQuestion(query)) {
+      const labParams = extractLabEngineParams(query);
+      if (labParams) {
+        logger.info(`[auto-lab-route] query="${query}" → type=${labParams.type}`);
+        req.body = {
+          ...(req.body || {}),
+          flow: 'lab',
+          lab_query_type: labParams.type,
+          ...(labParams.base_id   && { base_id:   labParams.base_id   }),
+          ...(labParams.version_a && { version_a: labParams.version_a }),
+          ...(labParams.version_b && { version_b: labParams.version_b }),
+          ...(labParams.id_a      && { id_a:      labParams.id_a      }),
+          ...(labParams.id_b      && { id_b:      labParams.id_b      }),
+        };
+        return await handleLabBridgeFlow(req, res, { query, userId });
+      }
     }
 
     // System / metadata routing (David): answer from DB/index only, never from RAG/LLM.
