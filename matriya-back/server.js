@@ -1215,6 +1215,12 @@ async function handleMatriyaSearch(req, res) {
   const flowRawEarly = String(req.body?.flow ?? req.query.flow ?? '').toLowerCase().trim();
   logger.warn(`[ENTRY] guard check starting — flow=${flowRawEarly || 'none'} query="${query}"`);
 
+  // flow=lab set explicitly by caller → bypass guard entirely; the caller already knows the intent.
+  if (flowRawEarly === 'lab') {
+    const userEarly = await getCurrentUser(req);
+    return await handleLabBridgeFlow(req, res, { query, userId: userEarly?.id ?? null });
+  }
+
   const labIntentDetected = isLabEngineQuestion(query);
   logger.warn(`[source-guard] lab_intent_detected=${labIntentDetected} query="${query}"`);
 
@@ -1226,8 +1232,7 @@ async function handleMatriyaSearch(req, res) {
       `flow=${flowRawEarly || 'none'} query="${query}"`
     );
     if (identifiersExtracted && flowRawEarly !== 'document') {
-      // Has explicit version/date identifiers and not forced document-only → route to Lab Engine.
-      // (userId resolved below after this block — pass null for now; it is only used for audit.)
+      // Has explicit identifiers extracted from query text → auto-route to Lab Engine.
       logger.info(`[auto-lab-route] query="${query}" → type=${labParams.type}`);
       req.body = {
         ...(req.body || {}),
@@ -1242,10 +1247,8 @@ async function handleMatriyaSearch(req, res) {
       const userEarly = await getCurrentUser(req);
       return await handleLabBridgeFlow(req, res, { query, userId: userEarly?.id ?? null });
     }
-    // Guard fires: lab-intent query with no identifiers (or flow=document).
-    // Must NOT reach RAG under any circumstances.
-    // HTTP 200: the request was valid — the system processed it and made a correct routing decision (BLOCKED).
-    // Using 400 would cause frontends to treat this as a network error and discard the JSON body.
+    // Guard fires: lab-intent in query text but no extractable identifiers, and not flow=lab.
+    // Must NOT reach RAG — document text is NOT authoritative for lab values.
     logger.warn(`[source-guard] source_guard_fired=true — blocking before RAG. query="${query}"`);
     return res.status(200).json({
       error: 'LAB_QUERY_INCOMPLETE',

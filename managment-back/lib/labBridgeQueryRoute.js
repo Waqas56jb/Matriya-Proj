@@ -578,11 +578,14 @@ export async function labBridgeQueryHandler(req, res) {
       try {
         const baseMatch = baseIdSqlMatch(1);
         // Get the 2 most recent formulation versions that have at least one production run.
+        // Filter NULL versions — rows without a version string cannot be compared.
         const { rows: versions } = await client.query(
           `SELECT DISTINCT f.version
            FROM formulations f
            JOIN production_runs pr ON pr.formulation_id = f.id
            WHERE ${baseMatch}
+             AND f.version IS NOT NULL
+             AND f.version <> ''
            ORDER BY f.version DESC
            LIMIT 2`,
           [base_req]
