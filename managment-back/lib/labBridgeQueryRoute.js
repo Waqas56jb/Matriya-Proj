@@ -556,6 +556,57 @@ export async function labBridgeQueryHandler(req, res) {
       }
     }
 
+    // compare_latest_runs: auto-pick the 2 most recent formulation versions for a base and compare them.
+    // Used by "compare runs BASE-XXX" natural-language queries where explicit version IDs are not supplied.
+    if (type === 'compare_latest_runs') {
+      const pick = (k) => {
+        const v = req.query[k] ?? (req.body && req.body[k]);
+        return v == null ? '' : String(v).trim();
+      };
+      const base_req = pick('base_id');
+      if (!base_req) {
+        return res.status(400).json({ error: 'compare_latest_runs requires base_id.' });
+      }
+      let client;
+      try {
+        client = await pool.connect();
+      } catch (e) {
+        const msg = e?.message || String(e);
+        console.error('[lab/query] pool.connect:', msg);
+        return res.status(503).json({ error: `Lab database connection failed: ${msg}.` });
+      }
+      try {
+        const baseMatch = baseIdSqlMatch(1);
+        // Get the 2 most recent formulation versions that have at least one production run.
+        const { rows: versions } = await client.query(
+          `SELECT DISTINCT f.version
+           FROM formulations f
+           JOIN production_runs pr ON pr.formulation_id = f.id
+           WHERE ${baseMatch}
+           ORDER BY f.version DESC
+           LIMIT 2`,
+          [base_req]
+        );
+        if (versions.length < 2) {
+          return res.json({
+            ...emptyVersionComparison(
+              `compare_latest_runs: fewer than 2 versions with runs found for base_id="${base_req}". ` +
+              `Available: ${versions.map((v) => v.version).join(', ') || 'none'}`
+            ),
+            source_metadata: { base_id: base_req, auto_selected: true },
+          });
+        }
+        // versions[0] is the newer, versions[1] is the older → version_a=older (baseline), version_b=newer (compare)
+        const va = str(versions[1].version); // older = baseline
+        const vb = str(versions[0].version); // newer = compare
+        console.error(`[lab/query] compare_latest_runs: base_id="${base_req}" auto-selected version_a="${va}" version_b="${vb}"`);
+        const body = await handleVersionComparison(client, base_req, va, vb);
+        return res.json({ ...body, source_metadata: { ...body.source_metadata, auto_selected: true } });
+      } finally {
+        client.release();
+      }
+    }
+
     if (type === 'formulation_delta') {
       let client;
       try {

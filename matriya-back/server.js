@@ -732,13 +732,7 @@ app.post("/ask-matriya", requireAuth, askMatriyaMulter, async (req, res) => {
     return res.status(400).json({ error: "message is required" });
   }
 
-  const davidFixture = tryDavidAcceptanceFixture(message);
-  if (davidFixture) {
-    return res.json(davidFixture);
-  }
-  if (isDavidFormulationInsufficientQuestion(message)) {
-    return res.json(davidInsufficientEvidencePayload());
-  }
+  // Mock fixtures removed (David M2 — all responses must come from real data, not fixtures).
 
   let history = [];
   try {
@@ -1004,9 +998,10 @@ function isLabEngineQuestion(query) {
   if (
     /\bthreshold\b/.test(q)
   ) return true;
-  // Run comparison intent
+  // Run comparison intent — includes "compare runs BASE-XXX" short form
   if (
     /\bcompare\s+runs?\b/.test(q) ||
+    /\bcompare\s+runs?\s+\w/.test(q) ||
     /\bproduction\s+run\s+(comparison|delta|result)\b/.test(q) ||
     /\blab\s+run\b/.test(q) ||
     /\brun\s+(comparison|delta|result|vs)\b/.test(q)
@@ -1030,9 +1025,15 @@ function isLabEngineQuestion(query) {
 function extractLabEngineParams(query) {
   const q = String(query || '').trim();
   const ql = q.toLowerCase();
-  // Optional BASE-XXX extraction
+  // BASE-XXX extraction (required for all lab types)
   const baseMatch = q.match(/\b(BASE-\d+)\b/i);
   const base_id = baseMatch ? baseMatch[1].toUpperCase() : null;
+
+  // "compare runs BASE-XXX" → compare_latest_runs: only needs base_id, auto-selects 2 latest versions.
+  if (/\bcompare\s+runs?\b/i.test(ql) && base_id) {
+    return { type: 'compare_latest_runs', base_id };
+  }
+
   // Version comparison: needs "version" keyword + two numeric version identifiers (e.g. 003.1, 003.2)
   if (/\bversion\b/i.test(ql)) {
     const versionNums = q.match(/\b(\d{1,4}\.\d+)\b/g) || [];
@@ -1040,12 +1041,14 @@ function extractLabEngineParams(query) {
       return { type: 'version_comparison', base_id, version_a: versionNums[0], version_b: versionNums[1] };
     }
   }
+
   // Formulation delta: two DD.MM.YYYY dates
   const dateNums = q.match(/\b(\d{2}\.\d{2}\.\d{4})\b/g) || [];
   if (dateNums.length >= 2) {
     return { type: 'formulation_delta', base_id, id_a: dateNums[0], id_b: dateNums[1] };
   }
-  // Max-delta / threshold without explicit version → can't extract safely
+
+  // Delta/threshold/comparison without explicit identifiers → guard will block this
   return null;
 }
 

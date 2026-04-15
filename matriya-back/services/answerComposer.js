@@ -22,6 +22,25 @@ export const ALLOWED_DECISION_STATUSES = [
   'NO_CHANGE',
 ];
 
+/**
+ * Maps decision_status → GO / STOP / ITERATE action (David M2 requirement).
+ * GO   = data supports proceeding to next experiment or replication
+ * STOP = data is missing / experiment is invalid — cannot conclude
+ * ITERATE = delta is below threshold or no meaningful change — repeat with adjusted variable
+ */
+export function buildActionRequired(decisionStatus) {
+  switch (decisionStatus) {
+    case 'VALID_CONCLUSION':      return 'GO';
+    case 'INCONCLUSIVE':          return 'ITERATE';
+    case 'NO_CHANGE':             return 'ITERATE';
+    case 'INSUFFICIENT_DATA':     return 'STOP';
+    case 'STRUCTURAL_INCOMPLETE': return 'STOP';
+    case 'INVALID_EXPERIMENT':    return 'STOP';
+    case 'REFERENCE_ONLY':        return 'STOP';
+    default:                      return 'STOP';
+  }
+}
+
 const DEFAULT_THRESHOLD_PCT = parseFloat(process.env.LAB_VISCOSITY_THRESHOLD_PCT || '10', 10) || 10;
 
 /**
@@ -380,6 +399,9 @@ export async function composeAnswer(query, labResult, externalData, opts = {}) {
     constraint_rules = [];
   }
   out.constraint_rules = constraint_rules;
+
+  // GO / STOP / ITERATE action (David M2 requirement).
+  out.action_required = buildActionRequired(out.decision_status);
 
   // Source separation (David): DB is authoritative for lab queries.
   // Documents are historical reference only — never combined with computed DB values in a decision.
