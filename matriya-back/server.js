@@ -995,23 +995,44 @@ function isLabEngineQuestion(query) {
     /\bversion\s+[\d.]+\s+vs\.?\s+[\d.]+/.test(q) ||
     /\bversion\s+comparison\b/.test(q)
   ) return true;
-  // Delta / threshold intent (lab-specific vocabulary)
+  // Delta intent — any mention of "delta" in a measurement/lab context.
+  // Includes: "max delta", "what is the max delta", "delta percentage", "delta pct",
+  // "the delta", "show delta", "delta value", "delta result", etc.
   if (
-    /\bmax[\s_-]delta\b/.test(q) ||
-    /\bdelta[\s_-]percent(age)?\b/.test(q) ||
-    /\bdelta[\s_-]pct\b/.test(q) ||
+    /\bmax[\s_-]?delta\b/.test(q) ||
+    /\bdelta[\s_-]?percent(age)?\b/.test(q) ||
+    /\bdelta[\s_-]?pct\b/.test(q) ||
+    /\bviscosity[\s_-]?delta\b/.test(q) ||
+    /\bwhat\s+(is\s+)?(the\s+)?(\w+\s+)?delta\b/.test(q) ||
+    /\b(show|get|return|compute|calculate)\s+(the\s+)?(\w+\s+)?delta\b/.test(q) ||
+    /\bdelta\s+(value|result|summary|between|of|for)\b/.test(q) ||
+    /\bthe\s+delta\b/.test(q) ||
+    /\bdelta\s+\d/.test(q)
+  ) return true;
+  // Threshold intent — any question about pass/fail against a threshold.
+  if (
     /\bpass\s+(the\s+)?threshold\b/.test(q) ||
     /\bfail\s+(the\s+)?threshold\b/.test(q) ||
-    /\bviscosity\s+delta\b/.test(q) ||
-    /\bproduction\s+run\s+comparison\b/.test(q)
+    /\babove\s+(the\s+)?threshold\b/.test(q) ||
+    /\bbelow\s+(the\s+)?threshold\b/.test(q) ||
+    /\bexceed\s+(the\s+)?threshold\b/.test(q) ||
+    /\b(what|does|is).{0,30}\bthreshold\b/.test(q) ||
+    /\bthreshold\s+(pass|fail|met|exceeded|value|check)\b/.test(q)
+  ) return true;
+  // Production run / lab run comparisons
+  if (
+    /\bproduction\s+run\s+(comparison|delta|result)\b/.test(q) ||
+    /\blab\s+run\b/.test(q) ||
+    /\brun\s+(comparison|delta|result|vs)\b/.test(q)
   ) return true;
   // Formulation date-to-date diff (two DD.MM.YYYY dates in same query)
   if (/\b\d{2}\.\d{2}\.\d{4}\b.*\b\d{2}\.\d{2}\.\d{4}\b/.test(q)) return true;
   // Hebrew lab terms
   if (
-    /דלתא\s+(מקסימל|אחוז|מקס)/.test(q) ||
+    /דלתא/.test(q) ||
     /השוואת\s+(גרסאות|ריצות|פורמולציות)/.test(q) ||
-    /עבר\s+את\s+(הסף|הסף\s+המקסימל)/.test(q)
+    /עבר\s+את\s+(הסף|הסף\s+המקסימל)/.test(q) ||
+    /\bסף\b/.test(q)
   ) return true;
   return false;
 }
@@ -1225,12 +1246,20 @@ async function handleMatriyaSearch(req, res) {
       return await handleLabBridgeFlow(req, res, { query, userId });
     }
 
-    // Lab Engine auto-routing (David): detect version comparison / delta / threshold queries and route
-    // directly to Lab Engine even when the user did not explicitly set flow=lab.
-    // Must run BEFORE document-flow / research-flow so the query never hits RAG by mistake.
-    if (!documentFlow && isLabEngineQuestion(query)) {
+    // Lab Engine auto-routing + source contamination guard (David).
+    // Fires for ALL flow types — including flow=document — to prevent RAG from returning
+    // numerical lab values (delta%, threshold) that conflict with DB-computed authoritative data.
+    const labIntentDetected = isLabEngineQuestion(query);
+    if (labIntentDetected) {
       const labParams = extractLabEngineParams(query);
-      if (labParams) {
+      const identifiersExtracted = labParams !== null;
+      // Runtime log (David requirement): always emit detection state.
+      logger.warn(
+        `[source-guard] lab-intent-detected=true explicit-identifiers-extracted=${identifiersExtracted} ` +
+        `flow=${flowRaw || 'none'} query="${query}"`
+      );
+      if (identifiersExtracted && !documentFlow) {
+        // Explicit version/date identifiers found and not a forced document-only request → route to Lab Engine.
         logger.info(`[auto-lab-route] query="${query}" → type=${labParams.type}`);
         req.body = {
           ...(req.body || {}),
@@ -1244,19 +1273,25 @@ async function handleMatriyaSearch(req, res) {
         };
         return await handleLabBridgeFlow(req, res, { query, userId });
       }
-      // Lab-intent query detected but params could not be extracted (e.g. missing version IDs).
-      // Source contamination guard (David): refuse to answer via RAG — return a structured error instead.
-      // A document may contain delta/threshold values but those are NOT authoritative for lab decisions.
-      logger.warn(`[source-guard] lab-intent query not routable to Lab Engine — params missing. query="${query}"`);
+      // Source contamination guard fires when:
+      //   a) lab-intent detected but explicit identifiers are missing (can't safely route to DB), OR
+      //   b) lab-intent detected even on flow=document path (document RAG must never answer lab queries).
+      // Either way: block and return LAB_QUERY_INCOMPLETE. Do NOT let RAG answer.
+      logger.warn(`[source-guard] source-guard-fired=true — blocking query from reaching RAG. query="${query}"`);
       return res.status(400).json({
         error: 'LAB_QUERY_INCOMPLETE',
         routing: 'BLOCKED_SOURCE_GUARD',
         data_source: 'NONE',
+        lab_intent_detected: true,
+        explicit_identifiers_extracted: identifiersExtracted,
+        source_guard_fired: true,
         message:
-          'This query appears to ask for lab computation (delta, threshold, version comparison) ' +
-          'but the required parameters (base_id, version_a, version_b) could not be extracted. ' +
-          'Document RAG is NOT authoritative for lab values. ' +
-          'Please supply explicit version IDs and use flow=lab, or rephrase with specific version numbers.',
+          'This query requests lab computation (delta, threshold, version comparison). ' +
+          'Document RAG is NOT authoritative for lab values — only the DB-computed Lab Engine is. ' +
+          (identifiersExtracted
+            ? 'Parameters were found but flow=document was set. Use flow=lab to route to the Lab Engine.'
+            : 'Required parameters (base_id, version_a, version_b or two DD.MM.YYYY dates) were not found. ' +
+              'Supply explicit identifiers and use flow=lab.'),
         query,
       });
     }
