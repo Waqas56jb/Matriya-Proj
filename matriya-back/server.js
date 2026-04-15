@@ -1221,6 +1221,60 @@ async function handleMatriyaSearch(req, res) {
     return res.status(400).json({ error: "query parameter is required" });
   }
 
+  // ─── SOURCE GUARD: runs at absolute entry, before ANY retrieval, DB call, or user lookup ───
+  // David requirement: log "[ENTRY] guard check starting" at the very top.
+  const flowRawEarly = String(req.body?.flow ?? req.query.flow ?? '').toLowerCase().trim();
+  logger.warn(`[ENTRY] guard check starting — flow=${flowRawEarly || 'none'} query="${query}"`);
+
+  const labIntentDetected = isLabEngineQuestion(query);
+  logger.warn(`[source-guard] lab_intent_detected=${labIntentDetected} query="${query}"`);
+
+  if (labIntentDetected) {
+    const labParams = extractLabEngineParams(query);
+    const identifiersExtracted = labParams !== null;
+    logger.warn(
+      `[source-guard] explicit_identifiers_extracted=${identifiersExtracted} ` +
+      `flow=${flowRawEarly || 'none'} query="${query}"`
+    );
+    if (identifiersExtracted && flowRawEarly !== 'document') {
+      // Has explicit version/date identifiers and not forced document-only → route to Lab Engine.
+      // (userId resolved below after this block — pass null for now; it is only used for audit.)
+      logger.info(`[auto-lab-route] query="${query}" → type=${labParams.type}`);
+      req.body = {
+        ...(req.body || {}),
+        flow: 'lab',
+        lab_query_type: labParams.type,
+        ...(labParams.base_id   && { base_id:   labParams.base_id   }),
+        ...(labParams.version_a && { version_a: labParams.version_a }),
+        ...(labParams.version_b && { version_b: labParams.version_b }),
+        ...(labParams.id_a      && { id_a:      labParams.id_a      }),
+        ...(labParams.id_b      && { id_b:      labParams.id_b      }),
+      };
+      const userEarly = await getCurrentUser(req);
+      return await handleLabBridgeFlow(req, res, { query, userId: userEarly?.id ?? null });
+    }
+    // Guard fires: lab-intent query with no identifiers (or flow=document).
+    // Must NOT reach RAG under any circumstances.
+    logger.warn(`[source-guard] source_guard_fired=true — blocking before RAG. query="${query}"`);
+    return res.status(400).json({
+      error: 'LAB_QUERY_INCOMPLETE',
+      routing: 'BLOCKED_SOURCE_GUARD',
+      data_source: 'NONE',
+      lab_intent_detected: true,
+      explicit_identifiers_extracted: identifiersExtracted,
+      source_guard_fired: true,
+      message:
+        'This query requests lab computation (delta, threshold, version comparison). ' +
+        'Document RAG is NOT authoritative for lab values — only the DB-computed Lab Engine is. ' +
+        (identifiersExtracted
+          ? 'Parameters found but flow=document is set. Use flow=lab to route to the Lab Engine.'
+          : 'Required parameters (base_id, version_a, version_b or two DD.MM.YYYY dates) not found. ' +
+            'Supply explicit identifiers and use flow=lab.'),
+      query,
+    });
+  }
+  // ─── END SOURCE GUARD ───────────────────────────────────────────────────────────────────────
+
   let nResults = parseInt(req.body?.n_results ?? req.query.n_results, 10) || 5;
   if (nResults < 1 || nResults > 50) {
     nResults = 5;
@@ -1228,7 +1282,7 @@ async function handleMatriyaSearch(req, res) {
 
   const filename = (req.body?.filename ?? req.query.filename) || null;
   const generateAnswer = (req.body?.generate_answer ?? req.query.generate_answer) !== 'false';
-  const flowRaw = String(req.body?.flow ?? req.query.flow ?? '').toLowerCase().trim();
+  const flowRaw = flowRawEarly;
   const documentFlow = flowRaw === 'document';
   const labFlow = flowRaw === 'lab';
   const stage = String(req.body?.stage ?? req.query.stage ?? '').toUpperCase().trim();
@@ -1240,60 +1294,9 @@ async function handleMatriyaSearch(req, res) {
   const userId = user?.id ?? null;
 
   try {
-    // Milestone 1 — Lab queries: structured bridge only (never document RAG).
-    // Runs whenever flow=lab (even if generate_answer=false) so routing cannot fall through to RAG by mistake.
+    // Explicit flow=lab (no guard needed — already passed guard above or set programmatically).
     if (labFlow) {
       return await handleLabBridgeFlow(req, res, { query, userId });
-    }
-
-    // Lab Engine auto-routing + source contamination guard (David).
-    // Fires for ALL flow types — including flow=document — to prevent RAG from returning
-    // numerical lab values (delta%, threshold) that conflict with DB-computed authoritative data.
-    const labIntentDetected = isLabEngineQuestion(query);
-    if (labIntentDetected) {
-      const labParams = extractLabEngineParams(query);
-      const identifiersExtracted = labParams !== null;
-      // Runtime log (David requirement): always emit detection state.
-      logger.warn(
-        `[source-guard] lab-intent-detected=true explicit-identifiers-extracted=${identifiersExtracted} ` +
-        `flow=${flowRaw || 'none'} query="${query}"`
-      );
-      if (identifiersExtracted && !documentFlow) {
-        // Explicit version/date identifiers found and not a forced document-only request → route to Lab Engine.
-        logger.info(`[auto-lab-route] query="${query}" → type=${labParams.type}`);
-        req.body = {
-          ...(req.body || {}),
-          flow: 'lab',
-          lab_query_type: labParams.type,
-          ...(labParams.base_id   && { base_id:   labParams.base_id   }),
-          ...(labParams.version_a && { version_a: labParams.version_a }),
-          ...(labParams.version_b && { version_b: labParams.version_b }),
-          ...(labParams.id_a      && { id_a:      labParams.id_a      }),
-          ...(labParams.id_b      && { id_b:      labParams.id_b      }),
-        };
-        return await handleLabBridgeFlow(req, res, { query, userId });
-      }
-      // Source contamination guard fires when:
-      //   a) lab-intent detected but explicit identifiers are missing (can't safely route to DB), OR
-      //   b) lab-intent detected even on flow=document path (document RAG must never answer lab queries).
-      // Either way: block and return LAB_QUERY_INCOMPLETE. Do NOT let RAG answer.
-      logger.warn(`[source-guard] source-guard-fired=true — blocking query from reaching RAG. query="${query}"`);
-      return res.status(400).json({
-        error: 'LAB_QUERY_INCOMPLETE',
-        routing: 'BLOCKED_SOURCE_GUARD',
-        data_source: 'NONE',
-        lab_intent_detected: true,
-        explicit_identifiers_extracted: identifiersExtracted,
-        source_guard_fired: true,
-        message:
-          'This query requests lab computation (delta, threshold, version comparison). ' +
-          'Document RAG is NOT authoritative for lab values — only the DB-computed Lab Engine is. ' +
-          (identifiersExtracted
-            ? 'Parameters were found but flow=document was set. Use flow=lab to route to the Lab Engine.'
-            : 'Required parameters (base_id, version_a, version_b or two DD.MM.YYYY dates) were not found. ' +
-              'Supply explicit identifiers and use flow=lab.'),
-        query,
-      });
     }
 
     // System / metadata routing (David): answer from DB/index only, never from RAG/LLM.
