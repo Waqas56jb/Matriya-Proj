@@ -23,12 +23,23 @@ export const ALLOWED_DECISION_STATUSES = [
 ];
 
 /**
- * Maps decision_status → GO / STOP / ITERATE action (David M2 requirement).
- * GO   = data supports proceeding to next experiment or replication
- * STOP = data is missing / experiment is invalid — cannot conclude
- * ITERATE = delta is below threshold or no meaningful change — repeat with adjusted variable
+ * Maps decision_status + data_grade → GO / STOP / ITERATE (David M2 data qualification rule).
+ *
+ * Data grade rule (David requirement):
+ *   REAL               → GO is allowed if decision warrants it
+ *   HISTORICAL_REFERENCE | NO_DATA | LOGICAL (no-change) → STOP always
+ *
+ * Decision rule:
+ *   VALID_CONCLUSION   → GO   (only reachable when data_grade = REAL)
+ *   INCONCLUSIVE       → ITERATE
+ *   NO_CHANGE          → ITERATE
+ *   anything else      → STOP
  */
-export function buildActionRequired(decisionStatus) {
+export function buildActionRequired(decisionStatus, dataGrade) {
+  // Data grade gate — non-REAL data is never actionable.
+  if (dataGrade && dataGrade !== 'REAL' && dataGrade !== 'LOGICAL') {
+    return 'STOP';
+  }
   switch (decisionStatus) {
     case 'VALID_CONCLUSION':      return 'GO';
     case 'INCONCLUSIVE':          return 'ITERATE';
@@ -400,8 +411,9 @@ export async function composeAnswer(query, labResult, externalData, opts = {}) {
   }
   out.constraint_rules = constraint_rules;
 
-  // GO / STOP / ITERATE action (David M2 requirement).
-  out.action_required = buildActionRequired(out.decision_status);
+  // GO / STOP / ITERATE — depends on BOTH decision_status AND data_grade (David M2 data qualification rule).
+  // data_grade is always present in out.evidence (set by buildEvidence).
+  out.action_required = buildActionRequired(out.decision_status, out.evidence?.data_grade);
 
   // Source separation (David): DB is authoritative for lab queries.
   // Documents are historical reference only — never combined with computed DB values in a decision.
