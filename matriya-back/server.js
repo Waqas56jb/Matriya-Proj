@@ -995,32 +995,18 @@ function isLabEngineQuestion(query) {
     /\bversion\s+[\d.]+\s+vs\.?\s+[\d.]+/.test(q) ||
     /\bversion\s+comparison\b/.test(q)
   ) return true;
-  // Delta intent — any mention of "delta" in a measurement/lab context.
-  // Includes: "max delta", "what is the max delta", "delta percentage", "delta pct",
-  // "the delta", "show delta", "delta value", "delta result", etc.
+  // Delta intent — ANY standalone mention of "delta" is lab-intent in this system.
+  // Short forms like "delta?" are included because this is a lab decision engine, not a chat system.
   if (
-    /\bmax[\s_-]?delta\b/.test(q) ||
-    /\bdelta[\s_-]?percent(age)?\b/.test(q) ||
-    /\bdelta[\s_-]?pct\b/.test(q) ||
-    /\bviscosity[\s_-]?delta\b/.test(q) ||
-    /\bwhat\s+(is\s+)?(the\s+)?(\w+\s+)?delta\b/.test(q) ||
-    /\b(show|get|return|compute|calculate)\s+(the\s+)?(\w+\s+)?delta\b/.test(q) ||
-    /\bdelta\s+(value|result|summary|between|of|for)\b/.test(q) ||
-    /\bthe\s+delta\b/.test(q) ||
-    /\bdelta\s+\d/.test(q)
+    /\bdelta\b/.test(q)
   ) return true;
-  // Threshold intent — any question about pass/fail against a threshold.
+  // Threshold intent — ANY standalone mention of "threshold" is lab-intent.
   if (
-    /\bpass\s+(the\s+)?threshold\b/.test(q) ||
-    /\bfail\s+(the\s+)?threshold\b/.test(q) ||
-    /\babove\s+(the\s+)?threshold\b/.test(q) ||
-    /\bbelow\s+(the\s+)?threshold\b/.test(q) ||
-    /\bexceed\s+(the\s+)?threshold\b/.test(q) ||
-    /\b(what|does|is).{0,30}\bthreshold\b/.test(q) ||
-    /\bthreshold\s+(pass|fail|met|exceeded|value|check)\b/.test(q)
+    /\bthreshold\b/.test(q)
   ) return true;
-  // Production run / lab run comparisons
+  // Run comparison intent
   if (
+    /\bcompare\s+runs?\b/.test(q) ||
     /\bproduction\s+run\s+(comparison|delta|result)\b/.test(q) ||
     /\blab\s+run\b/.test(q) ||
     /\brun\s+(comparison|delta|result|vs)\b/.test(q)
