@@ -1255,8 +1255,10 @@ async function handleMatriyaSearch(req, res) {
     }
     // Guard fires: lab-intent query with no identifiers (or flow=document).
     // Must NOT reach RAG under any circumstances.
+    // HTTP 200: the request was valid — the system processed it and made a correct routing decision (BLOCKED).
+    // Using 400 would cause frontends to treat this as a network error and discard the JSON body.
     logger.warn(`[source-guard] source_guard_fired=true — blocking before RAG. query="${query}"`);
-    return res.status(400).json({
+    return res.status(200).json({
       error: 'LAB_QUERY_INCOMPLETE',
       routing: 'BLOCKED_SOURCE_GUARD',
       data_source: 'NONE',
