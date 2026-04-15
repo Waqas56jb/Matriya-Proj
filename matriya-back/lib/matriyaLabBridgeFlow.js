@@ -134,6 +134,9 @@ async function composeAnswerSafe(query, labResult, externalData, opts) {
         next_step: 'Review server logs and lab contract; verify MANAGEMENT_BACK_URL and management POSTGRES_URL.',
         constraint_rules: [],
         routing: LAB_FLOW_ROUTING,
+        data_source: 'DB_COMPUTED',
+        source_authority: 'Lab decisions derived exclusively from DB production_runs. Document text values are historical reference only.',
+        source_isolation_confirmed: true,
       };
     }
   }

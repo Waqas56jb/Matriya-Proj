@@ -197,7 +197,14 @@ function attachKernelV16ToPayload(resPayload, { stage, answer, sources, session,
   if (stage === 'N' && Array.isArray(kc.breakdown_reasons) && kc.breakdown_reasons.length) {
     base.n_generation = suggestStructuralGeneration(kc.breakdown_reasons);
   }
-  return { ...resPayload, kernel_v16: base };
+  // Source separation (David): research/document responses are DOCUMENT_RAG only.
+  // Numerical values (delta%, versions) come from document text — NOT from DB computation.
+  return {
+    ...resPayload,
+    data_source: 'DOCUMENT_RAG',
+    source_note: 'Values extracted from indexed document text (RAG). For authoritative lab computation use Lab Engine (flow=lab, data_source=DB_COMPUTED).',
+    kernel_v16: base,
+  };
 }
 
 const KG01_VIOLATION = 'KG-01_VIOLATION';
@@ -1237,6 +1244,21 @@ async function handleMatriyaSearch(req, res) {
         };
         return await handleLabBridgeFlow(req, res, { query, userId });
       }
+      // Lab-intent query detected but params could not be extracted (e.g. missing version IDs).
+      // Source contamination guard (David): refuse to answer via RAG — return a structured error instead.
+      // A document may contain delta/threshold values but those are NOT authoritative for lab decisions.
+      logger.warn(`[source-guard] lab-intent query not routable to Lab Engine — params missing. query="${query}"`);
+      return res.status(400).json({
+        error: 'LAB_QUERY_INCOMPLETE',
+        routing: 'BLOCKED_SOURCE_GUARD',
+        data_source: 'NONE',
+        message:
+          'This query appears to ask for lab computation (delta, threshold, version comparison) ' +
+          'but the required parameters (base_id, version_a, version_b) could not be extracted. ' +
+          'Document RAG is NOT authoritative for lab values. ' +
+          'Please supply explicit version IDs and use flow=lab, or rephrase with specific version numbers.',
+        query,
+      });
     }
 
     // System / metadata routing (David): answer from DB/index only, never from RAG/LLM.
@@ -1278,6 +1300,7 @@ async function handleMatriyaSearch(req, res) {
           flow: 'document',
           research_flow: 'document',
           routing: 'DOCUMENT_RAG_ONLY',
+          data_source: 'DOCUMENT_RAG',
           lab_bridge_invoked: false,
           document_rag_invoked: true,
           reply_code: 'NO_ANSWER',
@@ -1294,6 +1317,7 @@ async function handleMatriyaSearch(req, res) {
           flow: 'document',
           research_flow: 'document',
           routing: 'DOCUMENT_RAG_ONLY',
+          data_source: 'DOCUMENT_RAG',
           lab_bridge_invoked: false,
           document_rag_invoked: true,
           reply_code: 'NO_ANSWER',
@@ -1326,6 +1350,11 @@ async function handleMatriyaSearch(req, res) {
         flow: 'document',
         research_flow: 'document',
         routing: 'DOCUMENT_RAG_ONLY',
+        // Source separation (David): this answer comes from indexed documents only.
+        // Numerical values (delta%, versions) are from document text — NOT from DB computation.
+        // For authoritative lab values use flow=lab (DB_COMPUTED).
+        data_source: 'DOCUMENT_RAG',
+        source_note: 'Values extracted from indexed document text. For authoritative lab computation (delta, threshold, versions) use Lab Engine (flow=lab) which reads from DB production_runs.',
         document_rag_invoked: true,
         lab_bridge_invoked: false,
         kernel_invoked: false,

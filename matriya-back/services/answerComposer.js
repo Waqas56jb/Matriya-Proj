@@ -381,5 +381,16 @@ export async function composeAnswer(query, labResult, externalData, opts = {}) {
   }
   out.constraint_rules = constraint_rules;
 
+  // Source separation (David): DB is authoritative for lab queries.
+  // Documents are historical reference only — never combined with computed DB values in a decision.
+  out.data_source = 'DB_COMPUTED';
+  out.source_authority =
+    'Lab decisions derived exclusively from DB production_runs (computed, normalized). ' +
+    'Document text values (RAG) are historical reference only and must not be used for scientific conclusions.';
+  // Isolation proof: decision was derived from labResult only, external_context is context-only (never evidence).
+  out.source_isolation_confirmed = out.external_context.every(
+    (c) => c._context_only === true && c._not_evidence === true
+  );
+
   return out;
 }
