@@ -275,6 +275,8 @@ export default {
   email: 'דוא"ל',
   fullName: 'שם מלא',
   loginTitle: 'מערכת בקרת מעבדה',
+  authLoginLead: 'התחברות מאובטחת לניהול פרויקטים, מסמכים ומעבדה.',
+  authSignupLead: 'יצירת חשבון חדש — אותם משתמשים כמו במטריה.',
   signupTitle: 'הרשמה – משתמשים כמו במטריה',
   loginButton: 'התחבר',
   signupButton: 'הירשם',

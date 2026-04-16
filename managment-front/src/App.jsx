@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
-import { HiEye, HiEyeSlash } from 'react-icons/hi2';
+import { HiEye, HiEyeSlash, HiOutlineSparkles, HiOutlineUserPlus } from 'react-icons/hi2';
 import { BrowserRouter, Routes, Route, Link, NavLink, Outlet, useParams, useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { projects as projectsApi, users as usersApi, tasks as tasksApi, milestones as milestonesApi, documents as documentsApi, notes as notesApi, projectFiles as projectFilesApi, rag as ragApi, gptRag as gptRagApi, chat as chatApi, emails as emailsApi, lab as labApi, auth as authApi, getStoredToken, getStoredUser, setAuth, clearAuth, getNetworkErrorMessage } from './api';
 import { LabExcelSpreadsheet } from './LabExcelSpreadsheet';
@@ -4183,7 +4183,7 @@ function SettingsTab({ projectId, project, setProject, navigate, projectRole, us
   );
 }
 
-function AuthPasswordField({ id, value, onChange, autoComplete }) {
+function AuthPasswordField({ id, value, onChange, autoComplete, inputClassName = '' }) {
   const [show, setShow] = React.useState(false);
   return (
     <div className="auth-password-field">
@@ -4194,6 +4194,7 @@ function AuthPasswordField({ id, value, onChange, autoComplete }) {
         onChange={onChange}
         autoComplete={autoComplete}
         required
+        className={inputClassName}
       />
       <button
         type="button"
@@ -4233,30 +4234,53 @@ function LoginView({ onLogin }) {
   };
 
   return (
-    <div className="app-shell" dir="rtl">
-      <div className="card tab-card auth-card" style={{ maxWidth: 340, margin: '40px auto' }}>
-        <h2 className="page-title">{t.loginTitle}</h2>
-        {error && <p className="error">{typeof error === 'string' ? error : String(error)}</p>}
-        <form onSubmit={submit}>
-          <div className="form-group">
-            <label>{t.username}</label>
-            <input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required />
-          </div>
-          <div className="form-group">
-            <label htmlFor="login-password">{t.password}</label>
-            <AuthPasswordField
-              id="login-password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              autoComplete="current-password"
-            />
-          </div>
-          <div className="flex gap">
-            <button type="submit" disabled={loading} className={loading ? 'btn-loading' : ''}>{loading ? t.loading : t.loginButton}</button>
-            <Link to="/signup" className="secondary" style={{ alignSelf: 'center' }}>{t.signup}</Link>
-          </div>
-        </form>
-        <p className="auth-footer-p" style={{ color: 'var(--muted)' }}>{t.noAccount} <Link to="/signup">{t.signup}</Link></p>
+    <div className="auth-page" dir="rtl">
+      <div className="auth-page__glow" aria-hidden />
+      <div className="auth-page__inner">
+        <div className="auth-panel">
+          <header className="auth-panel__header">
+            <div className="auth-panel__logo" aria-hidden>
+              <HiOutlineSparkles size={28} />
+            </div>
+            <h1 className="auth-panel__title">{t.loginTitle}</h1>
+            <p className="auth-panel__lead">{t.authLoginLead}</p>
+          </header>
+          {error && (
+            <div className="auth-error" role="alert">
+              {typeof error === 'string' ? error : String(error)}
+            </div>
+          )}
+          <form className="auth-form" onSubmit={submit}>
+            <div className="form-group">
+              <label htmlFor="login-username">{t.username}</label>
+              <input
+                id="login-username"
+                className="auth-input"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                autoComplete="username"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="login-password">{t.password}</label>
+              <AuthPasswordField
+                id="login-password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                autoComplete="current-password"
+                inputClassName="auth-input auth-input--password"
+              />
+            </div>
+            <button type="submit" className={`auth-submit ${loading ? 'auth-submit--loading' : ''}`} disabled={loading}>
+              {loading ? t.loading : t.loginButton}
+            </button>
+          </form>
+          <p className="auth-panel__switch">
+            {t.noAccount}{' '}
+            <Link to="/signup" className="auth-link">{t.signup}</Link>
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -4289,38 +4313,76 @@ function SignupView({ onSignup }) {
   };
 
   return (
-    <div className="app-shell" dir="rtl">
-      <div className="card tab-card auth-card" style={{ maxWidth: 340, margin: '40px auto' }}>
-        <h2 className="page-title">{t.signupTitle}</h2>
-        {error && <p className="error">{typeof error === 'string' ? error : String(error)}</p>}
-        <form onSubmit={submit}>
-          <div className="form-group">
-            <label>{t.username}</label>
-            <input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required />
-          </div>
-          <div className="form-group">
-            <label>{t.email}</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required />
-          </div>
-          <div className="form-group">
-            <label htmlFor="signup-password">{t.password}</label>
-            <AuthPasswordField
-              id="signup-password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              autoComplete="new-password"
-            />
-          </div>
-          <div className="form-group">
-            <label>{t.fullName}</label>
-            <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder={t.optional} autoComplete="name" />
-          </div>
-          <div className="flex gap">
-            <button type="submit" disabled={loading} className={loading ? 'btn-loading' : ''}>{loading ? t.loading : t.signupButton}</button>
-            <Link to="/login" style={{ alignSelf: 'center' }}>{t.login}</Link>
-          </div>
-        </form>
-        <p className="auth-footer-p" style={{ color: 'var(--muted)' }}>{t.haveAccount} <Link to="/login">{t.login}</Link></p>
+    <div className="auth-page" dir="rtl">
+      <div className="auth-page__glow" aria-hidden />
+      <div className="auth-page__inner">
+        <div className="auth-panel auth-panel--wide">
+          <header className="auth-panel__header">
+            <div className="auth-panel__logo auth-panel__logo--alt" aria-hidden>
+              <HiOutlineUserPlus size={28} />
+            </div>
+            <h1 className="auth-panel__title">{t.signupTitle}</h1>
+            <p className="auth-panel__lead">{t.authSignupLead}</p>
+          </header>
+          {error && (
+            <div className="auth-error" role="alert">
+              {typeof error === 'string' ? error : String(error)}
+            </div>
+          )}
+          <form className="auth-form" onSubmit={submit}>
+            <div className="form-group">
+              <label htmlFor="signup-username">{t.username}</label>
+              <input
+                id="signup-username"
+                className="auth-input"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                autoComplete="username"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="signup-email">{t.email}</label>
+              <input
+                id="signup-email"
+                className="auth-input"
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="signup-password">{t.password}</label>
+              <AuthPasswordField
+                id="signup-password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                autoComplete="new-password"
+                inputClassName="auth-input auth-input--password"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="signup-fullname">{t.fullName}</label>
+              <input
+                id="signup-fullname"
+                className="auth-input"
+                value={fullName}
+                onChange={e => setFullName(e.target.value)}
+                placeholder={t.optional}
+                autoComplete="name"
+              />
+            </div>
+            <button type="submit" className={`auth-submit ${loading ? 'auth-submit--loading' : ''}`} disabled={loading}>
+              {loading ? t.loading : t.signupButton}
+            </button>
+          </form>
+          <p className="auth-panel__switch">
+            {t.haveAccount}{' '}
+            <Link to="/login" className="auth-link">{t.login}</Link>
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -4360,7 +4422,14 @@ export default function App() {
     setUser(null);
   };
 
-  if (!authChecked) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{t.loading}</div>;
+  if (!authChecked) {
+    return (
+      <div className="auth-loading-screen" dir="rtl">
+        <div className="auth-loading-spinner" aria-hidden />
+        <p>{t.loading}</p>
+      </div>
+    );
+  }
 
   return (
     <BrowserRouter>
