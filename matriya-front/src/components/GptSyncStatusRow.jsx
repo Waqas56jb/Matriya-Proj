@@ -75,13 +75,20 @@ const GptSyncStatusRow = forwardRef(function GptSyncStatusRow(
     const [syncResponseIndexingPending, setSyncResponseIndexingPending] = useState(false);
     const [syncHadError, setSyncHadError] = useState(false);
     const stRef = useRef(null);
+    const onStatusChangeRef = useRef(onStatusChange);
+    const onSyncingChangeRef = useRef(onSyncingChange);
+    const onSyncCompleteRef = useRef(onSyncComplete);
+    onStatusChangeRef.current = onStatusChange;
+    onSyncingChangeRef.current = onSyncingChange;
+    onSyncCompleteRef.current = onSyncComplete;
+
     useEffect(() => {
         stRef.current = st;
     }, [st]);
 
     useEffect(() => {
-        onStatusChange?.(st);
-    }, [st, onStatusChange]);
+        onStatusChangeRef.current?.(st);
+    }, [st]);
 
     const refresh = useCallback(async (opts = {}) => {
         const silent = Boolean(opts.silent);
@@ -184,8 +191,8 @@ const GptSyncStatusRow = forwardRef(function GptSyncStatusRow(
         syncResponseIndexingPending;
 
     useEffect(() => {
-        onSyncingChange?.(gptGateBusy);
-    }, [gptGateBusy, onSyncingChange]);
+        onSyncingChangeRef.current?.(gptGateBusy);
+    }, [gptGateBusy]);
 
     useEffect(() => {
         if (!syncResponseIndexingPending || !st?.vector_store_id) return;

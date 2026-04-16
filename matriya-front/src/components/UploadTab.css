@@ -192,13 +192,6 @@
     resize: vertical;
 }
 
-.upload-ask-live-status {
-    margin: 0 0 12px 0;
-    color: #166534;
-    font-size: 0.85rem;
-    line-height: 1.35;
-}
-
 .upload-ask-run {
     padding: 10px 20px;
     background: var(--matriya-accent);

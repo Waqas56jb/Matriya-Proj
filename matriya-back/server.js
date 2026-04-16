@@ -719,6 +719,16 @@ async function loadIndexedTextForAskMatriya(rag, filename) {
 }
 
 /**
+ * OpenAI may return HTTP 401 (invalid key) or 403; the Matriya SPA treats **401** as expired **user JWT**
+ * and logs out. Never forward upstream OpenAI auth/billing status as 401 to the browser.
+ */
+function matriyaHttpStatusForOpenAiUpstream(upstreamStatus) {
+  if (upstreamStatus === 401 || upstreamStatus === 403) return 502;
+  if (upstreamStatus === 429) return 429;
+  return 500;
+}
+
+/**
  * Ask Matriya: chat with AI about selected files (OpenAI).
  * Flow: (1) LLM classifies materials-library vs document intent; (2) if materials + MATRIYA_MANAGEMENT_API_URL returns data, answer from management /api/materials + /api/projects only; (3) else full extracted text (capped) in system message — not vector RAG.
  * Body: JSON { message, history?, filenames? } for system files, or multipart (message, history, files) for uploads.
@@ -915,11 +925,13 @@ ${fileContext}`
     // Ask Matriya: no RAG fail-safe sanitizer — the model already sees full document text in the system message.
     return res.json({ reply, sources: [] });
   } catch (e) {
-    const status = e.response?.status;
+    const upstream = e.response?.status;
     const msg = e.response?.data?.error?.message || e.message || "OpenAI request failed";
     logger.error(`[ask-matriya routing] DOCUMENTS path OpenAI error: ${msg}`);
-    return res.status(status === 401 ? 401 : status === 429 ? 429 : 500).json({
-      error: msg
+    const httpStatus = matriyaHttpStatusForOpenAiUpstream(upstream);
+    return res.status(httpStatus).json({
+      error: msg,
+      code: 'OPENAI_PROVIDER_ERROR'
     });
   }
 });

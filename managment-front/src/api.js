@@ -62,12 +62,17 @@ api.interceptors.request.use(config => {
   return config;
 });
 
+let managerHandling401 = false;
 api.interceptors.response.use(
   r => r,
   err => {
     if (err.response?.status === 401) {
       const url = err.config?.url || '';
       if (!url.includes('/api/auth/login') && !url.includes('/api/auth/signup') && !url.includes('/api/auth/me')) {
+        if (managerHandling401) {
+          return Promise.reject(err);
+        }
+        managerHandling401 = true;
         clearAuth();
         window.location.replace('/login');
       }

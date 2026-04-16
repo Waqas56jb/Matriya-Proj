@@ -5,6 +5,7 @@ import GptSyncStatusRow from './GptSyncStatusRow';
 import AnswerEvidenceSection from './AnswerEvidenceSection';
 import AnswerView from './answerComposer/AnswerView';
 import { isAnswerComposerPayload } from '../utils/isAnswerComposerPayload';
+import JsonViewer from './JsonViewer';
 import './SearchTab.css';
 
 const SEARCH_EVIDENCE_TITLE = 'מקורות מהמסמכים (ציטוטים)';
@@ -16,7 +17,7 @@ const ALL_DOCUMENTS_SCOPE_LABEL =
 const RESEARCH_STAGES = [
     { id: 'K', label: 'K', desc: 'מידע קיים בלבד (ללא פתרונות)' },
     { id: 'C', label: 'C', desc: 'מידע מאומת (ללא פתרונות)' },
-    { id: 'B', label: 'B', desc: 'Hard Stop בלבד' },
+    { id: 'B', label: 'B', desc: 'עצירה קשיחה בלבד' },
     { id: 'N', label: 'N', desc: 'מותר רק אחרי B' },
     { id: 'L', label: 'L', desc: 'מותר רק אחרי N' }
 ];
@@ -318,7 +319,7 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
                 // Reconstruct context from search results
                 contextToUse = results.results.map((result, index) => {
                     const docText = result.document || result.text || '';
-                    const filename = result.metadata?.filename || 'Unknown';
+                    const filename = result.metadata?.filename || 'לא ידוע';
                     return `[Source ${index + 1} from ${filename}]:\n${docText}\n`;
                 }).join('\n');
             }
@@ -349,19 +350,7 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
     return (
         <div className="search-tab">
                 <div className="card">
-                <h2>{searchFlowMode === 'lab' ? 'Lab — Answer Composer' : 'חיפוש במסמכים'}</h2>
-                {searchFlowMode === 'lab' && (
-                    <p className="lab-composer-banner" lang="en">
-                        After <strong>Search</strong>, open Console (F12): you should see{' '}
-                        <code>[Lab] queryResult</code> with <code>decision_status</code>,{' '}
-                        <code>evidence.run_ids</code>, <code>evidence.delta_summary</code>,{' '}
-                        <code>constraint_rules</code> (when ISM-001 matches), <code>external_context</code>. Also:{' '}
-                        <code>window.__MATRIYA_LAB_QUERY_RESULT</code>. Raw JSON is under &quot;Debug: raw queryResult
-                        JSON&quot; below the dashboard. On screen: <strong>Suggested Experiments (Constraint Engine)</strong>{' '}
-                        is a separate block <em>below Evidence</em> — it is not inside the &quot;delta_summary
-                        (raw)&quot; box.
-                    </p>
-                )}
+                <h2>{searchFlowMode === 'lab' ? 'מעבדה — לוח החלטות (Answer Composer)' : 'חיפוש במסמכים'}</h2>
                 <GptSyncStatusRow
                     filenames={documentFiles.map((f) => f.filename)}
                     onSyncComplete={loadDocumentFiles}
@@ -389,8 +378,10 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
                             4 סוכנים
                         </button>
                     </div>
-                    <p className="stage-hint">
-                        {answerMode === 'quick' ? 'תשובה אחת מהירה לפי שלב מחקר (K→C→B→N→L).' : 'שרשרת 4 סוכנים (analysis → research → critic → synthesis) עם Integrity Monitor.'}
+                        <p className="stage-hint">
+                        {answerMode === 'quick'
+                            ? 'תשובה אחת מהירה לפי שלב מחקר (K→C→B→N→L).'
+                            : 'שרשרת ארבעה סוכנים (ניתוח → מחקר → ביקורת → סינתזה) עם ניטור שלמות.'}
                     </p>
                 </div>
 
@@ -425,10 +416,10 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
                         </div>
                         <p className="stage-hint">
                             {searchFlowMode === 'document'
-                                ? 'Retrieval + תשובה בלבד. לא רצים validateAndAdvance, pre-LLM FSM או state machine.'
+                                ? 'שליפה מהמאגר והסקה ממסמכים בלבד — בלי מכונת מצבים מלאה של המחקר.'
                                 : searchFlowMode === 'lab'
-                                  ? 'POST flow=lab לשרת Matriya — גוף התשובה הוא מפתחי composeAnswer בלבד (ללא שינוי בשכבת ה-UI).'
-                                  : 'מסלול מחקר מלא: סשן, שלב K→L, שער ראיות לפני LLM, וקרנל.'}
+                                  ? 'הבקשה נשלחת לשרת עם flow=lab — מבנה התשובה הוא לפי Answer Composer (נתוני מעבדה מובנים).'
+                                  : 'מסלול מחקר מלא: סשן, שלב K→L, שער ראיות לפני המודל, וקרנל.'}
                         </p>
                     </div>
                 )}
@@ -687,8 +678,8 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
                             {answerMode === 'agents'
                                 ? '🤖 מריץ 4 סוכנים (ניתוח → מחקר → ביקורת → סינתזה)...'
                                 : searchFlowMode === 'lab'
-                                  ? '🔗 Lab chain — calling /api/research/search (flow=lab)...'
-                                  : '🤖 מייצר תשובה חכמה באמצעות AI...'}
+                                  ? 'מעבדה — שולח שאילתה לשרת (מסלול מעבדה)…'
+                                  : 'מייצר תשובה חכמה…'}
                         </div>
                     </div>
                 )}
@@ -699,22 +690,16 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
                         {composerPayload && <AnswerView data={results} />}
                         {labMismatch && (
                             <div className="lab-composer-mismatch" role="alert">
-                                <h3 lang="en">Answer Composer not detected</h3>
-                                <p lang="en">
-                                    The API response is missing the six Composer fields. Your UI is new, but the
-                                    backend URL is probably an old server (e.g. Vercel). Set{' '}
-                                    <code>REACT_APP_API_BASE_URL=http://localhost:8000</code> in <code>.env</code> and
-                                    restart <code>npm start</code>. Run <code>matriya-back</code> locally with the
-                                    latest code.
+                                <h3>לא זוהה מבנה Answer Composer</h3>
+                                <p>
+                                    התשובה מהשרת אינה כוללת את ששת השדות הצפויים. לעיתים זה קורה כש־
+                                    <code className="lab-code-inline">REACT_APP_API_BASE_URL</code> מצביע לשרת ישן
+                                    או לפריסה ללא הקוד העדכני. בדקו את כתובת ה־API ב־
+                                    <code className="lab-code-inline">.env</code> והריצו מחדש את הפרונט לאחר עדכון
+                                    השרת.
                                 </p>
-                                <pre className="lab-composer-mismatch-pre">{JSON.stringify(results, null, 2)}</pre>
+                                <JsonViewer value={results} maxHeight="min(40vh, 320px)" />
                             </div>
-                        )}
-                        {lastResultsFromLab && results && (
-                            <details className="lab-debug-json" open={false}>
-                                <summary lang="en">Step 4 — Debug: raw queryResult JSON (David)</summary>
-                                <pre className="lab-debug-json-pre">{JSON.stringify(results, null, 2)}</pre>
-                            </details>
                         )}
                         {legacyResults && (
                         <>

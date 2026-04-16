@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
+import { HiEye, HiEyeSlash } from 'react-icons/hi2';
 import { BrowserRouter, Routes, Route, Link, NavLink, Outlet, useParams, useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { projects as projectsApi, users as usersApi, tasks as tasksApi, milestones as milestonesApi, documents as documentsApi, notes as notesApi, projectFiles as projectFilesApi, rag as ragApi, gptRag as gptRagApi, chat as chatApi, emails as emailsApi, lab as labApi, auth as authApi, getStoredToken, getStoredUser, setAuth, clearAuth, getNetworkErrorMessage } from './api';
 import { LabExcelSpreadsheet } from './LabExcelSpreadsheet';
@@ -3224,23 +3225,6 @@ function RagTab({ projectId }) {
               : undefined
           }
         />
-        <p
-          aria-live="polite"
-          style={{
-            marginTop: 6,
-            marginBottom: 10,
-            padding: '6px 10px',
-            borderRadius: 8,
-            background: 'rgba(22, 101, 52, 0.07)',
-            color: 'var(--accent, #166534)',
-            fontSize: '0.84rem',
-            fontWeight: 600
-          }}
-        >
-          {query.trim()
-            ? `✅ PROOF: LIVE SEARCH פעיל — "${query.trim()}" • ${query.trim().length} תווים (מתעדכן בכל הקשה)`
-            : 'הקלד בשדה "שאל שאלה" כדי לראות הוכחת LIVE SEARCH בזמן אמת'}
-        </p>
         <button
           type="button"
           onClick={runSearch}
@@ -4199,6 +4183,31 @@ function SettingsTab({ projectId, project, setProject, navigate, projectRole, us
   );
 }
 
+function AuthPasswordField({ id, value, onChange, autoComplete }) {
+  const [show, setShow] = React.useState(false);
+  return (
+    <div className="auth-password-field">
+      <input
+        id={id}
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={onChange}
+        autoComplete={autoComplete}
+        required
+      />
+      <button
+        type="button"
+        className="auth-password-toggle"
+        onClick={() => setShow((s) => !s)}
+        aria-label={show ? 'הסתר סיסמה' : 'הצג סיסמה'}
+        aria-pressed={show}
+      >
+        {show ? <HiEyeSlash size={20} aria-hidden /> : <HiEye size={20} aria-hidden />}
+      </button>
+    </div>
+  );
+}
+
 function LoginView({ onLogin }) {
   const [username, setUsername] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -4234,8 +4243,13 @@ function LoginView({ onLogin }) {
             <input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required />
           </div>
           <div className="form-group">
-            <label>{t.password}</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required />
+            <label htmlFor="login-password">{t.password}</label>
+            <AuthPasswordField
+              id="login-password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              autoComplete="current-password"
+            />
           </div>
           <div className="flex gap">
             <button type="submit" disabled={loading} className={loading ? 'btn-loading' : ''}>{loading ? t.loading : t.loginButton}</button>
@@ -4289,8 +4303,13 @@ function SignupView({ onSignup }) {
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required />
           </div>
           <div className="form-group">
-            <label>{t.password}</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" required />
+            <label htmlFor="signup-password">{t.password}</label>
+            <AuthPasswordField
+              id="signup-password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              autoComplete="new-password"
+            />
           </div>
           <div className="form-group">
             <label>{t.fullName}</label>

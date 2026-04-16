@@ -9,10 +9,6 @@ import axios from 'axios';
 // https://matriya-proj-hfmn.vercel.app
 let API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || '').trim();
 
-if (process.env.NODE_ENV === 'development') {
-    console.log('REACT_APP_API_BASE_URL from env:', process.env.REACT_APP_API_BASE_URL);
-}
-
 if (!API_BASE_URL) {
     if (process.env.NODE_ENV === 'development') {
         API_BASE_URL = 'http://localhost:8000';
@@ -25,6 +21,23 @@ if (!API_BASE_URL) {
 }
 
 API_BASE_URL = API_BASE_URL.replace(/\/$/, '');
+
+/**
+ * Only treat 401 as "log out" when the backend signals invalid/missing **Matriya** session.
+ * OpenAI/proxy/upstream issues must not use 401 for this (see matriya-back); any stray 401 without
+ * these signals should not wipe the user's JWT.
+ */
+export function isMatriyaSessionInvalid401(error) {
+    if (!error?.response || error.response.status !== 401) return false;
+    const msg =
+        typeof error.response.data?.error === 'string' ? error.response.data.error : '';
+    if (msg === 'Incorrect username or password') return false;
+    if (msg === 'Invalid authentication credentials') return true;
+    if (msg === 'Authentication required') return true;
+    const path = (error.config?.url || '').split('?')[0] || '';
+    if (path.endsWith('/auth/me') || path === '/auth/me') return true;
+    return false;
+}
 
 // Create axios instance
 const api = axios.create({
@@ -53,12 +66,16 @@ api.interceptors.request.use(
     }
 );
 
-// Handle 401 errors (unauthorized)
+// Handle 401 errors (unauthorized). Single-flight: parallel failing requests must not spam reload().
+let matriyaHandling401 = false;
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (error.response?.status === 401) {
-            // Token expired or invalid
+        if (isMatriyaSessionInvalid401(error)) {
+            if (matriyaHandling401) {
+                return Promise.reject(error);
+            }
+            matriyaHandling401 = true;
             localStorage.removeItem('token');
             localStorage.removeItem('user');
             window.location.reload();

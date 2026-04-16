@@ -184,6 +184,10 @@ function UploadTab({ onGptSyncingChange, gptRagSyncing = false }) {
         loadCollectionInfo();
     }, [loadFileList, loadCollectionInfo]);
 
+    const onGptRagStatusChange = useCallback((s) => {
+        gptRagStatusRef.current = s;
+    }, []);
+
     /**
      * Fire-and-forget incremental cloud sync (no UI «מסנכרן» — avoids stuck state; server auto-sync skipped via ingest header).
      */
@@ -586,9 +590,7 @@ function UploadTab({ onGptSyncingChange, gptRagSyncing = false }) {
                         <GptSyncStatusRow
                             ref={gptSyncRowRef}
                             filenames={fileList.map((f) => f.filename)}
-                            onStatusChange={(s) => {
-                                gptRagStatusRef.current = s;
-                            }}
+                            onStatusChange={onGptRagStatusChange}
                             onSyncComplete={onGptSyncComplete}
                             onSyncingChange={onGptSyncingChange}
                             fileUploadInProgress={isUploading}
@@ -627,9 +629,6 @@ function UploadTab({ onGptSyncingChange, gptRagSyncing = false }) {
                                     rows={4}
                                     disabled={askLoading || isUploading || gptRagSyncing}
                                 />
-                                <p className="upload-ask-live-status" aria-live="polite">
-                                    {`התקבלו ${askQuery.length} תווים LIVE typing detected — UI updates on every keystroke ✅`}
-                                </p>
                                 <button
                                     type="button"
                                     className="upload-ask-run"

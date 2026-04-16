@@ -6,7 +6,7 @@ export default function NextStepBlock({ nextStep }) {
   return (
     <section className="ac-next-block" aria-labelledby="ac-next-heading">
       <h3 id="ac-next-heading" className="ac-block-title">
-        Next step
+        הצעד הבא
       </h3>
       <div className="ac-next-text">{t}</div>
     </section>

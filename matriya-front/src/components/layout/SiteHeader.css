@@ -1,0 +1,140 @@
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: linear-gradient(125deg, #1e1b4b 0%, #312e81 42%, #4338ca 100%);
+  color: #fff;
+  box-shadow: 0 4px 24px rgba(30, 27, 75, 0.35);
+  animation: siteHeaderIn 0.5s ease-out;
+}
+
+@keyframes siteHeaderIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.site-header__inner {
+  max-width: min(1200px, 100%);
+  margin: 0 auto;
+  padding: 14px clamp(16px, 4vw, 28px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.site-header__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.site-header__logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+  font-size: 1.5rem;
+  color: #c7d2fe;
+  flex-shrink: 0;
+}
+
+.site-header__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: right;
+  min-width: 0;
+}
+
+.site-header__name {
+  font-size: clamp(1.15rem, 3.5vw, 1.45rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.site-header__tagline {
+  font-size: clamp(0.72rem, 2vw, 0.82rem);
+  font-weight: 500;
+  color: rgba(226, 232, 255, 0.85);
+}
+
+.site-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.site-header__welcome {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.95rem;
+}
+
+.site-header__welcome-hi {
+  color: rgba(226, 232, 255, 0.75);
+}
+
+.site-header__welcome-who {
+  font-weight: 700;
+  color: #fff;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.site-header__logout {
+  padding: 10px 18px;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-weight: 600;
+  font-family: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+}
+
+.site-header__logout:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.site-header__slot {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 23, 42, 0.25);
+  padding: 10px clamp(12px, 3vw, 24px) 14px;
+}
+
+@media (max-width: 520px) {
+  .site-header__welcome-who {
+    max-width: 140px;
+  }
+
+  .site-header__logout {
+    width: 100%;
+  }
+
+  .site-header__actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

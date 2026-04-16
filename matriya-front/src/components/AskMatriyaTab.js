@@ -165,7 +165,7 @@ function AskMatriyaTab({ onGptSyncingChange, gptRagSyncing = false }) {
 
                 <GptSyncStatusRow
                     filenames={filesInApiOrder}
-                    onSyncComplete={() => loadSystemFiles()}
+                    onSyncComplete={loadSystemFiles}
                     onSyncingChange={onGptSyncingChange}
                     className="ask-matriya-gpt-sync"
                 />
@@ -255,7 +255,7 @@ function AskMatriyaTab({ onGptSyncingChange, gptRagSyncing = false }) {
                                                     </span>
                                                     {isSpreadsheetFilename(filename) ? (
                                                         <span className="ask-matriya-file-kind" aria-hidden>
-                                                            <span key="excel">Excel</span>
+                                                            <span key="excel">גיליון</span>
                                                         </span>
                                                     ) : null}
                                                 </button>

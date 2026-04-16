@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { toast } from 'react-toastify';
+import { HiEye, HiEyeSlash } from 'react-icons/hi2';
 import api from '../utils/api';
 import './LoginTab.css';
 
@@ -12,6 +14,7 @@ function LoginTab({ onLogin }) {
     });
     const [error, setError] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     const handleChange = (e) => {
         setFormData({
@@ -44,6 +47,7 @@ function LoginTab({ onLogin }) {
             if (onLogin) {
                 onLogin(response.data.user, response.data.access_token);
             }
+            toast.success(isLogin ? 'התחברת בהצלחה' : 'ההרשמה הושלמה — אפשר להתחבר');
         } catch (err) {
             // Log detailed error information to console
             console.error('Login/Signup Error:', {
@@ -123,15 +127,32 @@ function LoginTab({ onLogin }) {
                     )}
 
                     <div className="form-group">
-                        <label>סיסמה:</label>
-                        <input
-                            type="password"
-                            name="password"
-                            value={formData.password}
-                            onChange={handleChange}
-                            required
-                            className="form-input"
-                        />
+                        <label htmlFor="auth-password">סיסמה:</label>
+                        <div className="password-field">
+                            <input
+                                id="auth-password"
+                                type={showPassword ? 'text' : 'password'}
+                                name="password"
+                                value={formData.password}
+                                onChange={handleChange}
+                                required
+                                autoComplete={isLogin ? 'current-password' : 'new-password'}
+                                className="form-input form-input--with-toggle"
+                            />
+                            <button
+                                type="button"
+                                className="password-toggle"
+                                onClick={() => setShowPassword((v) => !v)}
+                                aria-label={showPassword ? 'הסתר סיסמה' : 'הצג סיסמה'}
+                                aria-pressed={showPassword}
+                            >
+                                {showPassword ? (
+                                    <HiEyeSlash aria-hidden size={22} />
+                                ) : (
+                                    <HiEye aria-hidden size={22} />
+                                )}
+                            </button>
+                        </div>
                     </div>
 
                     {error && (

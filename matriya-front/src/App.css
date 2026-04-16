@@ -1,132 +1,133 @@
-.container {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 20px;
-}
-
-header {
-    text-align: center;
-    margin-bottom: 40px;
-    padding: 30px 20px;
-    background: var(--matriya-surface);
-    border-radius: 20px;
-    border: 1px solid var(--matriya-border);
-    box-shadow: var(--matriya-shadow);
-    position: relative;
-    overflow: hidden;
-}
-
-header::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: var(--matriya-accent);
-    background-size: 200% 100%;
-    animation: shimmer 3s linear infinite;
-}
-
-@keyframes shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-}
-
-header h1 {
-    font-size: 3em;
-    margin-bottom: 10px;
-    color: var(--matriya-accent);
-    font-weight: 800;
-    letter-spacing: -1px;
-}
-
-.subtitle {
-    font-size: 1.2em;
-    color: var(--matriya-muted);
-    font-weight: 400;
-}
-
-.tabs {
+.app-root {
+    min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
-    gap: 15px;
-    margin-bottom: 30px;
+    flex-direction: column;
+}
+
+.app-main {
+    flex: 1;
+    width: 100%;
+    padding: clamp(16px, 3vw, 28px) 0;
+}
+
+.app-main--auth {
+    display: flex;
+    align-items: flex-start;
     justify-content: center;
-    flex-wrap: wrap;
+}
+
+.auth-hero {
+    max-width: 480px;
+    margin: 0 auto;
+}
+
+.auth-lead {
+    text-align: center;
+    font-size: clamp(0.95rem, 2.8vw, 1.08rem);
+    line-height: 1.65;
+    color: var(--matriya-muted, #475569);
+    margin-bottom: clamp(20px, 4vw, 28px);
+    padding: 0 8px;
+    animation: fadeUp 0.5s ease-out;
+}
+
+@keyframes fadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.container {
+    width: 100%;
+    max-width: min(1200px, 100%);
+    margin: 0 auto;
+    padding: 0 clamp(10px, 3vw, 20px);
+}
+
+/* Tabs in sticky header strip — light buttons on dark bar */
+.site-header__slot .matriya-tabs.tabs {
+    margin: 0;
+    padding-bottom: 4px;
+    gap: 8px;
+}
+
+.site-header__slot .tab-button {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    color: #e0e7ff;
+    min-height: 44px;
+}
+
+.site-header__slot .tab-button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow: none;
+}
+
+.site-header__slot .tab-button.active {
+    background: #fff;
+    color: #312e81;
+    border-color: #fff;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.site-header__slot .tab-button:disabled {
+    opacity: 0.45;
+}
+
+/* Tabs on auth / fallback (light) — if ever outside header */
+.matriya-tabs.tabs:not(.site-header__slot .matriya-tabs) {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 10px;
+    margin-bottom: clamp(16px, 4vw, 28px);
+    padding: 4px 0 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
 }
 
 .tab-button {
-    padding: 14px 28px;
-    background: var(--matriya-surface);
-    border: 1px solid var(--matriya-border);
+    flex: 0 0 auto;
+    min-height: 48px;
+    padding: 12px 20px;
+    background: var(--matriya-surface, #fff);
+    border: 1px solid var(--matriya-border, #e2e8f0);
     border-radius: 12px;
-    color: var(--matriya-text);
+    color: var(--matriya-text, #0f172a);
     cursor: pointer;
-    font-size: 1em;
+    font-size: clamp(0.9rem, 2.5vw, 1rem);
     font-weight: 600;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
-    overflow: hidden;
+    font-family: inherit;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    white-space: nowrap;
 }
 
-.tab-button::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-    transition: left 0.5s;
-}
-
-.tab-button:hover::before {
-    left: 100%;
-}
-
-.tab-button:hover {
-    background: rgba(22, 101, 52, 0.08);
-    border-color: var(--matriya-accent);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(22, 101, 52, 0.15);
+.tab-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(30, 27, 75, 0.12);
 }
 
 .tab-button.active {
-    background: var(--matriya-accent);
-    color: white;
-    border-color: var(--matriya-accent);
-    box-shadow: 0 8px 25px rgba(22, 101, 52, 0.3);
-    transform: translateY(-2px);
-}
-
-.tab-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.55;
-    transform: none;
-    box-shadow: none;
-}
-
-.tab-button:disabled:hover {
-    background: var(--matriya-surface);
-    border-color: var(--matriya-border);
-    transform: none;
-    box-shadow: none;
-}
-
-.tab-button.active:disabled {
-    opacity: 0.85;
-    background: var(--matriya-accent);
-    border-color: var(--matriya-accent);
+    background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%);
+    color: #fff;
+    border-color: transparent;
 }
 
 .tab-content-wrapper {
-    animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: fadeIn 0.35s ease;
 }
 
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateY(20px);
+        transform: translateY(10px);
     }
     to {
         opacity: 1;
@@ -135,66 +136,59 @@ header h1 {
 }
 
 .card {
-    background: var(--matriya-surface);
-    border-radius: 20px;
-    padding: 40px;
+    background: var(--matriya-surface, #fff);
+    border-radius: 16px;
+    padding: clamp(20px, 4vw, 36px);
     margin-bottom: 20px;
-    border: 1px solid var(--matriya-border);
-    box-shadow: var(--matriya-shadow);
-    transition: all 0.3s ease;
+    border: 1px solid var(--matriya-border, #e2e8f0);
+    box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+    transition: box-shadow 0.25s ease;
 }
 
 .card:hover {
-    border-color: var(--matriya-accent);
-    box-shadow: 0 12px 40px rgba(22, 101, 52, 0.12);
+    box-shadow: 0 8px 32px rgba(15, 23, 42, 0.08);
 }
 
 .card h2 {
-    margin-bottom: 25px;
-    color: var(--matriya-text);
-    font-size: 1.8em;
+    margin-bottom: clamp(16px, 3vw, 22px);
+    color: var(--matriya-text, #0f172a);
+    font-size: clamp(1.15rem, 3.5vw, 1.55rem);
     font-weight: 700;
 }
 
 .loading {
     text-align: center;
-    padding: 40px;
-    color: var(--matriya-muted);
-    font-size: 1.1em;
+    padding: clamp(32px, 8vw, 56px);
+    color: var(--matriya-muted, #64748b);
+    font-size: 1.05em;
 }
 
-.logout-button {
-    padding: 10px 20px;
-    background: var(--matriya-danger);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 0.9em;
-    font-weight: 600;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(220, 38, 38, 0.25);
+.loading-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
 }
 
-.logout-button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(220, 38, 38, 0.35);
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(67, 56, 202, 0.2);
+    border-top-color: #4338ca;
+    border-radius: 50%;
+    animation: spin 0.85s linear infinite;
 }
 
-@media (max-width: 768px) {
-    header h1 {
-        font-size: 2em;
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
     }
-    
-    .tabs {
-        flex-direction: column;
-    }
-    
-    .tab-button {
-        width: 100%;
-    }
-    
-    .card {
-        padding: 25px;
+}
+
+@media (min-width: 900px) {
+    .matriya-tabs.tabs {
+        flex-wrap: wrap;
+        justify-content: center;
+        overflow-x: visible;
     }
 }

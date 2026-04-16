@@ -263,7 +263,7 @@
 .ask-matriya-input:focus {
     outline: none;
     border-color: var(--matriya-accent);
-    box-shadow: 0 0 0 2px rgba(22, 101, 52, 0.2);
+    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.25);
 }
 
 .ask-matriya-input::placeholder {
@@ -290,4 +290,24 @@
 .ask-matriya-send:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+    .ask-matriya-input-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .ask-matriya-send {
+        width: 100%;
+        min-height: 48px;
+    }
+
+    .ask-matriya-msg {
+        max-width: 92%;
+    }
+
+    .ask-matriya-messages {
+        max-height: min(52vh, 420px);
+    }
 }

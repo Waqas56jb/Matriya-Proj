@@ -1,0 +1,73 @@
+/* LTR code panel — isolated from document RTL */
+
+.json-viewer {
+  direction: ltr;
+  unicode-bidi: isolate;
+  width: 100%;
+  margin-top: 0.75rem;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.json-viewer__pre {
+  margin: 0;
+  padding: 1rem 1.15rem;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.6;
+  font-family:
+    'JetBrains Mono',
+    'Fira Code',
+    'Cascadia Code',
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+  color: #1e293b;
+  text-align: left !important;
+  direction: ltr !important;
+  unicode-bidi: plaintext;
+  tab-size: 2;
+  white-space: pre;
+  word-spacing: normal;
+  letter-spacing: normal;
+}
+
+.json-viewer__pre:focus {
+  outline: 2px solid #6366f1;
+  outline-offset: -2px;
+}
+
+/* Scrollbars on the right (LTR) */
+.json-viewer__pre::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.json-viewer__pre::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 6px;
+}
+
+.json-viewer__pre::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 6px;
+}
+
+.json-viewer__pre::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+@media (max-width: 480px) {
+  .json-viewer__pre {
+    font-size: 11px;
+    padding: 0.75rem 0.85rem;
+  }
+}
