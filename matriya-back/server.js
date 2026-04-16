@@ -71,6 +71,7 @@ import { RAG_INSUFFICIENT_SUPPORT_MESSAGE_HE } from './lib/ragEvidenceFailSafe.j
 import { handleLabBridgeFlow } from './lib/matriyaLabBridgeFlow.js';
 import { externalLayerRouter, initExternalLayerFromEnv } from './lib/externalLayerRouter.js';
 import { evaluate as evaluateConstraintEngine } from './services/eliminationLogic.js';
+import sourcesRouter from './routes/external/sources.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -123,6 +124,7 @@ app.use('/auth', authRouter);
 app.use('/admin', adminRouter);
 initExternalLayerFromEnv(logger);
 app.use('/api/external/v1', externalLayerRouter);
+app.use('/api/external/sources', sourcesRouter);
 
 /**
  * POST /api/constraint/evaluate — Constraint engine (file-backed rules only; no DB, no suppliers).
