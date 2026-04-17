@@ -1,0 +1,5 @@
+{
+  "project_id": "CORR-001",
+  "metals": ["steel", "aluminum", "copper", "stainless"],
+  "status": "ACTIVE"
+}
