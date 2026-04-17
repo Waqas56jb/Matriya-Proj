@@ -634,3 +634,58 @@
     color: inherit;
     opacity: 0.9;
 }
+
+@media (max-width: 1024px) {
+    .upload-layout {
+        gap: 16px;
+    }
+
+    .upload-actions .upload-area {
+        min-width: 0;
+    }
+}
+
+@media (max-width: 768px) {
+    .upload-card-header,
+    .upload-actions {
+        gap: 10px;
+    }
+
+    .folder-upload-btn,
+    .upload-ask-run {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    .upload-placeholder p {
+        font-size: 1.02em;
+    }
+
+    .preview-header {
+        gap: 10px;
+        align-items: flex-start;
+    }
+
+    .preview-header h3 {
+        white-space: normal;
+    }
+}
+
+@media (max-width: 480px) {
+    .upload-area {
+        padding: 28px 14px;
+    }
+
+    .documents-table__data-row td {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+
+    .documents-table__data-row td::before {
+        margin-bottom: 2px;
+    }
+
+    .recent-list li {
+        white-space: normal;
+    }
+}

@@ -333,4 +333,27 @@
     .ask-matriya-file-section {
         padding: 12px 14px;
     }
+
+    .ask-matriya-dropdown-option {
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .ask-matriya-dropdown-option-label {
+        white-space: normal;
+        line-height: 1.35;
+    }
+
+    .ask-matriya-msg {
+        margin-inline: 10px;
+        max-width: 96%;
+    }
+
+    .ask-matriya-msg-user {
+        margin-right: 10px;
+    }
+
+    .ask-matriya-input {
+        padding: 12px 14px;
+    }
 }

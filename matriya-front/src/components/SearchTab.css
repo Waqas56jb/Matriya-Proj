@@ -1015,6 +1015,28 @@ textarea.search-input {
     }
 }
 
+@media (max-width: 900px) {
+    .search-options {
+        gap: 12px;
+        padding: 14px;
+    }
+
+    .search-options label {
+        width: 100%;
+    }
+
+    .file-select,
+    .search-button,
+    .agent-button {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .agent-actions {
+        gap: 10px;
+    }
+}
+
 @media (max-width: 480px) {
     .search-input {
         font-size: 16px;
@@ -1068,5 +1090,14 @@ textarea.search-input {
 
     .search-result-item:hover {
         transform: none;
+    }
+
+    .stage-button {
+        min-width: 0;
+    }
+
+    .result-distance {
+        width: 100%;
+        text-align: center;
     }
 }

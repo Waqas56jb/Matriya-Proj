@@ -932,3 +932,89 @@
         margin-bottom: 20px;
     }
 }
+
+@media (max-width: 900px) {
+    .section-button {
+        min-width: 0;
+        padding: 10px 14px;
+        font-size: 0.95em;
+    }
+
+    .dashboard-filters {
+        width: 100%;
+        gap: 10px;
+    }
+
+    .filter-group {
+        width: 100%;
+    }
+
+    .dashboard-filters .filter-input,
+    .dashboard-filters .filter-select,
+    .dashboard-filters .filter-input-text,
+    .filter-apply-btn,
+    .export-csv-btn {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .dashboard-export {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .integrity-status-panel {
+        grid-template-columns: 1fr;
+        padding: 14px;
+    }
+
+    .oracle-risk {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .file-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .delete-button {
+        width: 100%;
+    }
+
+    .history-item,
+    .permissions-panel,
+    .files-permissions {
+        padding: 14px;
+    }
+}
+
+@media (max-width: 640px) {
+    .admin-sections {
+        gap: 8px;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+    }
+
+    .violations-table th,
+    .violations-table td {
+        padding: 10px;
+        font-size: 0.9em;
+    }
+
+    .modal-overlay {
+        padding: 10px;
+    }
+
+    .modal-header,
+    .modal-body {
+        padding: 14px;
+    }
+
+    .users-list,
+    .search-history-list,
+    .files-checkbox-list {
+        max-height: 45vh;
+    }
+}

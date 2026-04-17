@@ -139,3 +139,29 @@
 @keyframes spin {
     to { transform: translate(-50%, -50%) rotate(360deg); }
 }
+
+@media (max-width: 768px) {
+    .info-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 14px;
+    }
+
+    .refresh-button {
+        width: 100%;
+        min-height: 44px;
+    }
+}
+
+@media (max-width: 480px) {
+    .loading,
+    .empty-state {
+        padding: 24px 12px;
+    }
+
+    .info-label,
+    .info-value {
+        font-size: 0.95em;
+    }
+}
