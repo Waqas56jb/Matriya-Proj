@@ -127,6 +127,24 @@ app.use('/api/external/v1', externalLayerRouter);
 app.use('/api/external/sources', sourcesRouter);
 
 /**
+ * POST /api/creativity/evaluate
+ * Body: { text: string, agent_name: string }
+ * Returns: { Es_score, regime, components, feedback, agent_name }
+ */
+import { evaluate as evaluateCreativity } from './services/creativityOrchestrator.js';
+
+app.post('/api/creativity/evaluate', (req, res) => {
+  try {
+    const { text, agent_name } = req.body || {};
+    if (!text) return res.status(400).json({ error: 'MISSING_FIELD', field: 'text' });
+    const result = evaluateCreativity({ text, agent_name });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
  * POST /api/constraint/evaluate — Constraint engine (file-backed rules only; no DB, no suppliers).
  * Body: { material_conditions: { ... } } or flat condition fields per MATRIYA_Constraint_Engine_Guide.md
  */
