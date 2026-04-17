@@ -127,6 +127,43 @@ app.use('/api/external/v1', externalLayerRouter);
 app.use('/api/external/sources', sourcesRouter);
 
 /**
+ * POST /api/cache/get   — { input, agent_name } → { result, cached }
+ * POST /api/cache/set   — { input, agent_name, value } → { key, expires_at }
+ * POST /api/cache/query — { input, agent_name } → runs mock compute, returns { result, cached }
+ */
+import { get as cacheGet, set as cacheSet, getOrCompute } from './services/agentCache.js';
+
+app.post('/api/cache/get', async (req, res) => {
+  try {
+    const { input, agent_name } = req.body || {};
+    if (!input || !agent_name) return res.status(400).json({ error: 'input and agent_name required' });
+    const result = await cacheGet(input, agent_name);
+    res.json({ result, cached: result !== null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/cache/set', async (req, res) => {
+  try {
+    const { input, agent_name, value } = req.body || {};
+    if (!input || !agent_name || value === undefined) return res.status(400).json({ error: 'input, agent_name, value required' });
+    const info = await cacheSet(input, agent_name, value);
+    res.json(info);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/cache/query', async (req, res) => {
+  try {
+    const { input, agent_name } = req.body || {};
+    if (!input || !agent_name) return res.status(400).json({ error: 'input and agent_name required' });
+    const { result, cached } = await getOrCompute(input, agent_name, async () => ({
+      computed_at: new Date().toISOString(),
+      echo: input,
+    }));
+    res.json({ result, cached });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
  * POST /api/creativity/evaluate
  * Body: { text: string, agent_name: string }
  * Returns: { Es_score, regime, components, feedback, agent_name }
