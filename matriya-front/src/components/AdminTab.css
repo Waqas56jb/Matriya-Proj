@@ -15,7 +15,9 @@
 }
 
 .section-button {
-    padding: 12px 24px;
+    flex: 0 0 auto;
+    min-height: 48px;
+    padding: 12px 20px;
     background: rgba(240, 242, 245, 0.4);
     border: 1px solid rgba(22, 101, 52, 0.2);
     border-radius: 10px;
@@ -24,6 +26,7 @@
     font-size: 1em;
     font-weight: 600;
     transition: all 0.3s ease;
+    box-sizing: border-box;
 }
 
 .section-button:hover {

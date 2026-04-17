@@ -514,15 +514,17 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
                 )}
 
                 {answerMode === 'agents' && (
-                    <div className="pre-justification-section" style={{ marginBottom: '12px' }}>
-                        <label className="stage-hint">הצדקה לפני ריצה (אופציונלי – נשמר עם הריצה):</label>
+                    <div className="pre-justification-section">
+                        <label className="stage-hint" htmlFor="pre-justification-ta">
+                            הצדקה לפני ריצה (אופציונלי – נשמר עם הריצה):
+                        </label>
                         <textarea
+                            id="pre-justification-ta"
                             value={preJustification}
                             onChange={(e) => setPreJustification(e.target.value)}
                             placeholder="תיעוד סיבת הריצה..."
-                            rows={2}
+                            rows={3}
                             className="search-input"
-                            style={{ width: '100%', minHeight: '50px', resize: 'vertical' }}
                         />
                     </div>
                 )}

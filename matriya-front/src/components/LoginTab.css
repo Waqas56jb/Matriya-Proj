@@ -5,8 +5,14 @@
     justify-content: center;
     align-items: center;
     min-height: min(60vh, 720px);
-    padding-inline: 4px;
+    padding-inline: clamp(8px, 3vw, 20px);
     box-sizing: border-box;
+}
+
+.login-tab .card {
+    width: 100%;
+    max-width: 440px;
+    margin-inline: auto;
 }
 
 .auth-form {
@@ -29,6 +35,9 @@
 }
 
 .form-input {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     padding: 15px 18px;
     background: var(--matriya-surface);
     border: 2px solid var(--matriya-border);

@@ -160,11 +160,13 @@
 .card {
     background: var(--matriya-surface, #fff);
     border-radius: 16px;
-    padding: clamp(20px, 4vw, 36px);
+    padding: clamp(16px, 4vw, 36px);
     margin-bottom: 20px;
     border: 1px solid var(--matriya-border, #e2e8f0);
     box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
     transition: box-shadow 0.25s ease;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .card:hover {
