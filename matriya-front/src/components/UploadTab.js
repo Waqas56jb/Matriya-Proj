@@ -456,15 +456,15 @@ function UploadTab({ onGptSyncingChange, gptRagSyncing = false }) {
     const fileTree = buildFileTree(fileList);
 
     const renderFileRow = (f, displayName) => (
-        <tr key={f.filename}>
-            <td className="doc-name">{displayName || f.filename}</td>
-            <td>{getFileType(displayName || f.filename)}</td>
-            <td>{formatDate(f.uploaded_at)}</td>
-            <td>{f.chunks_count ?? '—'}</td>
-            <td>
+        <tr key={f.filename} className="documents-table__data-row">
+            <td className="doc-name" data-label="שם מסמך">{displayName || f.filename}</td>
+            <td data-label="סוג קובץ">{getFileType(displayName || f.filename)}</td>
+            <td data-label="תאריך העלאה">{formatDate(f.uploaded_at)}</td>
+            <td data-label="חלקים">{f.chunks_count ?? '—'}</td>
+            <td data-label="תצוגה מקדימה">
                 <button type="button" className="preview-btn" onClick={() => openPreview(f.filename)}>תצוגה מקדימה</button>
             </td>
-            <td>
+            <td data-label="מחיקה">
                 <button
                     type="button"
                     className="preview-btn doc-delete-btn"
@@ -566,7 +566,7 @@ function UploadTab({ onGptSyncingChange, gptRagSyncing = false }) {
                         ) : fileList.length === 0 ? (
                             <p className="empty-docs">אין עדיין מסמכים. העלה קבצים למעלה.</p>
                         ) : (
-                            <div className="table-wrap">
+                            <div className="table-wrap" role="region" aria-label="טבלת מסמכים — גלילה אופקית במסכים רחבים">
                                 <table className="documents-table">
                                     <thead>
                                         <tr>

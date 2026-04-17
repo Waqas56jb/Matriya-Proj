@@ -38,7 +38,7 @@ function useMatchMedia(query) {
 }
 
 const TAB_DEFS = [
-    { id: 'upload', label: 'העלאת מסמכים', shortLabel: 'העלאה', Icon: HiArrowUpTray },
+    { id: 'upload', label: 'העלאת מסמכים', shortLabel: 'עלאה', Icon: HiArrowUpTray },
     { id: 'ask', label: 'שאל את מטריה', shortLabel: 'שאלה', Icon: HiChatBubbleLeftRight },
     { id: 'search', label: 'מחקר והחלטות', shortLabel: 'מחקר', Icon: HiMagnifyingGlass },
     { id: 'admin', label: 'ניהול', shortLabel: 'ניהול', Icon: HiCog6Tooth }

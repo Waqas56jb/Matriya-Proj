@@ -4,6 +4,12 @@
     max-width: 100%;
 }
 
+@media (max-width: 900px) {
+    .upload-tab {
+        padding-bottom: 8px;
+    }
+}
+
 .upload-layout {
     display: grid;
     grid-template-columns: 1fr 280px;
@@ -40,10 +46,6 @@
     .upload-actions .upload-area {
         min-width: 0;
         width: 100%;
-    }
-
-    .documents-table .doc-name {
-        max-width: min(200px, 55vw);
     }
 
     .preview-overlay {
@@ -116,8 +118,19 @@
 
 .table-wrap {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    max-width: 100%;
     border-radius: 12px;
     border: 1px solid var(--matriya-border);
+    scrollbar-width: thin;
+}
+
+/* Tablet / small laptop: keep table but allow horizontal scroll */
+@media (min-width: 701px) {
+    .documents-table {
+        min-width: 640px;
+    }
 }
 
 .documents-table {
@@ -192,6 +205,98 @@
     display: inline-block;
     font-size: 0.75rem;
     transition: transform 0.2s;
+}
+
+/* Mobile: stack each file as a card (no horizontal table overflow) */
+@media (max-width: 700px) {
+    .documents-table-card {
+        overflow: hidden;
+    }
+
+    .documents-table thead {
+        display: none;
+    }
+
+    .documents-table tbody {
+        display: block;
+        width: 100%;
+    }
+
+    .documents-table__data-row {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        margin-bottom: 14px;
+        padding: 14px 12px;
+        border: 1px solid var(--matriya-border);
+        border-radius: 14px;
+        background: var(--matriya-surface, #fff);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+    }
+
+    .documents-table__data-row:last-child {
+        margin-bottom: 0;
+    }
+
+    .documents-table__data-row td {
+        display: grid;
+        grid-template-columns: 5.75rem minmax(0, 1fr);
+        gap: 10px;
+        align-items: center;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(51, 65, 85, 0.1);
+        text-align: right;
+        font-size: 0.9rem;
+    }
+
+    .documents-table__data-row td:last-child {
+        border-bottom: none;
+    }
+
+    .documents-table__data-row td::before {
+        content: attr(data-label);
+        font-weight: 700;
+        font-size: 0.76rem;
+        color: var(--matriya-muted, #64748b);
+        line-height: 1.35;
+    }
+
+    .documents-table__data-row td.doc-name {
+        grid-template-columns: 1fr;
+        align-items: start;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+    .documents-table__data-row td.doc-name::before {
+        margin-bottom: 2px;
+    }
+
+    .documents-table__data-row .preview-btn {
+        width: 100%;
+        min-height: 44px;
+        text-align: center;
+        box-sizing: border-box;
+    }
+
+    .documents-table .folder-row {
+        display: block;
+        margin-bottom: 12px;
+    }
+
+    .documents-table .folder-row .folder-cell {
+        display: block;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(22, 101, 52, 0.07);
+        border: 1px solid rgba(22, 101, 52, 0.2);
+    }
+
+    .table-wrap {
+        overflow-x: visible;
+        border: none;
+        padding: 0;
+    }
 }
 
 .upload-ask-card {
