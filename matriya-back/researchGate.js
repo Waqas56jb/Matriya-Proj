@@ -115,6 +115,61 @@ export async function getOrCreateSession(sessionId, userId = null) {
 }
 
 /**
+ * Pipeline Checkpoints — deterministic guards before any stage advance.
+ *
+ * Checkpoint 1 — TRUST_GRADE_UNVERIFIED
+ *   If opts.trust_grade === 'UNVERIFIED' → BLOCK unconditionally.
+ *
+ * Checkpoint 2 — B_PROVEN_REQUIRED_BEFORE_N
+ *   If advancing to stage N and opts.B_proven === false → BLOCK.
+ *   (Complements the FSM B-completion check with an explicit proven flag.)
+ *
+ * Checkpoint 3 — STRUCTURAL_SCORE_TOO_LOW
+ *   If opts.structuralScore is provided and < 20 → BLOCK.
+ *
+ * @param {{ stage, trust_grade, B_proven, structuralScore, completedStages }} params
+ * @returns {{ ok: true } | { ok: false, checkpoint, error, status }}
+ */
+export function runPipelineCheckpoints({ stage, trust_grade, B_proven, structuralScore, completedStages }) {
+  // Checkpoint 1 — Trust grade must not be UNVERIFIED
+  if (trust_grade === 'UNVERIFIED') {
+    return {
+      ok: false,
+      checkpoint: 'TRUST_GRADE_UNVERIFIED',
+      error: 'BLOCKED: trust_grade is UNVERIFIED. Verify the source trust grade before advancing.',
+      status: 'blocked',
+      stopPipeline: true,
+    };
+  }
+
+  // Checkpoint 2 — B must be proven before entering N
+  if (stage === 'N' && B_proven === false) {
+    return {
+      ok: false,
+      checkpoint: 'B_PROVEN_REQUIRED_BEFORE_N',
+      error: 'BLOCKED: B_proven is false. Stage B must be proven before advancing to N.',
+      status: 'blocked',
+      stopPipeline: true,
+    };
+  }
+
+  // Checkpoint 3 — Structural score floor
+  if (structuralScore !== undefined && structuralScore !== null && Number.isFinite(Number(structuralScore))) {
+    if (Number(structuralScore) < 20) {
+      return {
+        ok: false,
+        checkpoint: 'STRUCTURAL_SCORE_TOO_LOW',
+        error: `BLOCKED: structuralScore ${structuralScore} is below minimum threshold of 20.`,
+        status: 'blocked',
+        stopPipeline: true,
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
  * FSCTM Gate: validate request. Requires valid session_id + stage.
  * Returns { ok, error, session, completed_stages, responseType }.
  * responseType: 'hard_stop' | 'info_only' | 'full_answer'
@@ -123,6 +178,9 @@ export async function getOrCreateSession(sessionId, userId = null) {
  * @param {object|null} [opts.kernel_signals] – breakdown / OOD / residuals / l_validation / flags
  * @param {object|null} [opts.data_anchors] – only experiment_snapshot | similar_experiments | failure_patterns
  * @param {object|null} [opts.methodology_flags] – repeated_solution, patches, cost_rising_no_progress
+ * @param {string}  [opts.trust_grade]    – checkpoint: UNVERIFIED → BLOCK
+ * @param {boolean} [opts.B_proven]       – checkpoint: false before N → BLOCK
+ * @param {number}  [opts.structuralScore] – checkpoint: < 20 → BLOCK
  */
 export async function validateAndAdvance(sessionId, stage, userId = null, opts = {}) {
   if (!stage || !VALID_STAGES.has(stage)) {
@@ -205,6 +263,20 @@ export async function validateAndAdvance(sessionId, stage, userId = null, opts =
       error: `Invalid stage transition. Allowed next stage: ${next}. Order is K→C→B→N→L only.`
     };
   }
+
+  // ── Pipeline Checkpoints ──────────────────────────────────────────────────
+  const checkpointResult = runPipelineCheckpoints({
+    stage,
+    trust_grade: opts.trust_grade,
+    B_proven:    opts.B_proven,
+    structuralScore: opts.structuralScore,
+    completedStages: workingStages,
+  });
+  if (!checkpointResult.ok) {
+    logger.warn(`[researchGate] BLOCKED at checkpoint: ${checkpointResult.checkpoint} — ${checkpointResult.error}`);
+    return checkpointResult;
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   const firstVisitToN = stage === 'N' && !completedSet.has('N');
   const firstVisitToL = stage === 'L' && !completedSet.has('L');
@@ -626,4 +698,4 @@ export async function evaluatePreLlmResearchGate({ sessionId, stage, completedSt
   return { ok: true };
 }
 
-export { RESPONSE_TYPE, STAGES_ORDER, VALID_STAGES, getNextAllowedStage, isStageAllowed };
+export { RESPONSE_TYPE, STAGES_ORDER, VALID_STAGES, getNextAllowedStage, isStageAllowed, runPipelineCheckpoints };
