@@ -13,6 +13,15 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const ALLOWED_TRUST_GRADES = ['C', 'D'];
 
+// GET /api/external/sources/count
+router.get('/count', async (req, res) => {
+  const { count, error } = await supabase
+    .from('external_sources')
+    .select('*', { count: 'exact', head: true });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ count });
+});
+
 // GET /api/external/sources
 router.get('/', async (req, res) => {
   const { data, error } = await supabase
