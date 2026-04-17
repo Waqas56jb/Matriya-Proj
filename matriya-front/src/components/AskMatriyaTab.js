@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import api from '../utils/api';
+import { formatApiErrorForUser } from '../utils/openAiFriendlyError';
 import { runAskMatriyaDocumentsQuery, sortFilenamesForAskMatriyaDisplay } from '../utils/askMatriyaDocumentsClient';
 import { formatBoldSegments } from '../utils/formatBold';
 import AnswerEvidenceSection from './AnswerEvidenceSection';
@@ -134,8 +135,7 @@ function AskMatriyaTab({ onGptSyncingChange, gptRagSyncing = false }) {
             const { reply: replyText, sources } = await runAskMatriyaDocumentsQuery(text, filenames);
             setMessages((prev) => [...prev, { role: 'assistant', content: replyText, sources }]);
         } catch (err) {
-            const msg = err.response?.data?.error || err.message || 'שגיאה בשליחה';
-            setError(msg);
+            setError(formatApiErrorForUser(err, 'שגיאה בשליחה'));
             setMessages((prev) => prev.slice(0, -1));
         } finally {
             setSending(false);

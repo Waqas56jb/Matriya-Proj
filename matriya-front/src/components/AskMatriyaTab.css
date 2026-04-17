@@ -6,7 +6,9 @@
 
 .ask-matriya-single {
     max-width: 900px;
+    width: 100%;
     margin: 0 auto;
+    box-sizing: border-box;
 }
 
 .ask-matriya-single h2 {
@@ -234,13 +236,18 @@
 }
 
 .ask-matriya-error {
-    padding: 10px 14px;
+    padding: 12px 14px;
     margin-bottom: 12px;
-    background: rgba(220, 38, 38, 0.1);
-    border: 1px solid rgba(220, 38, 38, 0.3);
-    border-radius: 10px;
-    color: var(--matriya-danger, #dc2626);
-    font-size: 0.95em;
+    background: rgba(220, 38, 38, 0.08);
+    border: 1px solid rgba(220, 38, 38, 0.28);
+    border-radius: 12px;
+    color: var(--matriya-danger, #b91c1c);
+    font-size: 0.9em;
+    line-height: 1.45;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .ask-matriya-input-row {

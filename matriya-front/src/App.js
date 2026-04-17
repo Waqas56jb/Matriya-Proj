@@ -1,4 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import {
+    HiArrowUpTray,
+    HiChatBubbleLeftRight,
+    HiMagnifyingGlass,
+    HiCog6Tooth
+} from 'react-icons/hi2';
 import './App.css';
 import SiteHeader from './components/layout/SiteHeader';
 import SiteFooter from './components/layout/SiteFooter';
@@ -14,6 +20,29 @@ import { API_BASE_URL, isMatriyaSessionInvalid401 } from './utils/api';
 
 const TAB_SWITCH_BLOCKED_WHILE_GPT_SYNC_TITLE =
     'לא ניתן לעבור לשונית אחרת בזמן סנכרון המסמכים (מסנכרן…)';
+
+const MOBILE_NAV_MQ = '(max-width: 900px)';
+
+function useMatchMedia(query) {
+    const [matches, setMatches] = useState(() =>
+        typeof window !== 'undefined' ? window.matchMedia(query).matches : false
+    );
+    useEffect(() => {
+        const mq = window.matchMedia(query);
+        const onChange = () => setMatches(mq.matches);
+        mq.addEventListener('change', onChange);
+        setMatches(mq.matches);
+        return () => mq.removeEventListener('change', onChange);
+    }, [query]);
+    return matches;
+}
+
+const TAB_DEFS = [
+    { id: 'upload', label: 'העלאת מסמכים', shortLabel: 'העלאה', Icon: HiArrowUpTray },
+    { id: 'ask', label: 'שאל את מטריה', shortLabel: 'שאלה', Icon: HiChatBubbleLeftRight },
+    { id: 'search', label: 'מחקר והחלטות', shortLabel: 'מחקר', Icon: HiMagnifyingGlass },
+    { id: 'admin', label: 'ניהול', shortLabel: 'ניהול', Icon: HiCog6Tooth }
+];
 
 function noop() {}
 
@@ -86,30 +115,48 @@ function App() {
         }
     }, [user, isAdmin, activeTab]);
 
-    const tabs = [
-        { id: 'upload', label: 'העלאת מסמכים' },
-        { id: 'ask', label: 'שאל את מטריה' },
-        { id: 'search', label: 'מחקר והחלטות' },
-        ...(isAdmin ? [{ id: 'admin', label: 'ניהול' }] : [])
-    ];
+    const tabs = TAB_DEFS.filter((t) => t.id !== 'admin' || isAdmin);
 
-    const tabNav = (
-        <nav className="tabs matriya-tabs" aria-label="ניווט ראשי">
-            {tabs.map((tab) => {
-                const switchBlocked = gptRagSyncing && tab.id !== activeTab;
-                return (
-                    <button
-                        key={tab.id}
-                        type="button"
-                        className={`tab-button ${activeTab === tab.id ? 'active' : ''}`}
-                        disabled={switchBlocked}
-                        title={switchBlocked ? TAB_SWITCH_BLOCKED_WHILE_GPT_SYNC_TITLE : undefined}
-                        onClick={() => setActiveTab(tab.id)}
-                    >
-                        {tab.label}
-                    </button>
-                );
-            })}
+    const isMobileNav = useMatchMedia(MOBILE_NAV_MQ);
+
+    const renderTabNav = (variant) => tabs.map((tab) => {
+        const switchBlocked = gptRagSyncing && tab.id !== activeTab;
+        const Icon = tab.Icon;
+        const isMobile = variant === 'mobile';
+        return (
+            <button
+                key={tab.id}
+                type="button"
+                className={`tab-button ${activeTab === tab.id ? 'active' : ''} ${isMobile ? 'tab-button--mobile' : ''}`}
+                disabled={switchBlocked}
+                title={switchBlocked ? TAB_SWITCH_BLOCKED_WHILE_GPT_SYNC_TITLE : tab.label}
+                onClick={() => setActiveTab(tab.id)}
+            >
+                {isMobile && Icon ? <Icon className="tab-button__icon" aria-hidden /> : null}
+                <span className={isMobile ? 'tab-button__short-label' : 'tab-button__label'}>
+                    {isMobile ? tab.shortLabel : tab.label}
+                </span>
+            </button>
+        );
+    });
+
+    const tabNavDesktop = (
+        <nav
+            className="tabs matriya-tabs matriya-tabs--desktop"
+            aria-label="ניווט ראשי"
+            aria-hidden={isMobileNav}
+        >
+            {renderTabNav('desktop')}
+        </nav>
+    );
+
+    const tabNavMobile = (
+        <nav
+            className="matriya-mobile-tabbar"
+            aria-label="ניווט ראשי"
+            aria-hidden={!isMobileNav}
+        >
+            {renderTabNav('mobile')}
         </nav>
     );
 
@@ -148,11 +195,11 @@ function App() {
     }
 
     return (
-        <div className="app-root">
+        <div className="app-root app-root--logged-in">
             <SiteHeader user={user} onLogout={handleLogout}>
-                {tabNav}
+                {tabNavDesktop}
             </SiteHeader>
-            <main className="app-main">
+            <main className="app-main app-main--with-mobile-tabbar">
                 <div className="container">
                     <div className="tab-content-wrapper" key={activeTab}>
                         <ErrorBoundary>
@@ -170,6 +217,7 @@ function App() {
                     </div>
                 </div>
             </main>
+            {tabNavMobile}
             <SiteFooter />
         </div>
     );

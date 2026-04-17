@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import api from '../utils/api';
+import { getOpenAiFriendlyMessage } from '../utils/openAiFriendlyError';
 import { formatBoldSegments } from '../utils/formatBold';
 import GptSyncStatusRow from './GptSyncStatusRow';
 import AnswerEvidenceSection from './AnswerEvidenceSection';
@@ -225,7 +226,10 @@ function SearchTab({ onGptSyncingChange, gptRagSyncing = false }) {
             }
         } catch (err) {
             const data = err.response?.data;
-            const msg = data?.error || data?.detail || err.message;
+            let msg = data?.error || data?.detail || err.message;
+            if (msg != null && typeof msg !== 'string') msg = String(msg);
+            const friendly = getOpenAiFriendlyMessage(String(msg || ''));
+            if (friendly) msg = friendly;
             if (searchFlowMode === 'lab' && data && typeof data === 'object') {
                 console.log('[Lab] queryResult (error response body)', data);
                 if (typeof window !== 'undefined') {

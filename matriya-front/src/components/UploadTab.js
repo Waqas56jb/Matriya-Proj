@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import api from '../utils/api';
+import { formatApiErrorForUser } from '../utils/openAiFriendlyError';
 import { runAskMatriyaDocumentsQuery } from '../utils/askMatriyaDocumentsClient';
 import { formatBoldSegments } from '../utils/formatBold';
 import GptSyncStatusRow, { filterEligibleLogicalNames, GPT_ELIGIBLE_RE } from './GptSyncStatusRow';
@@ -411,7 +412,7 @@ function UploadTab({ onGptSyncingChange, gptRagSyncing = false }) {
         } catch (error) {
             setUploadResult({
                 type: 'error',
-                message: error.response?.data?.error || error.response?.data?.detail || error.message || 'שגיאה במחיקה'
+                message: formatApiErrorForUser(error, 'שגיאה במחיקה')
             });
         } finally {
             setDeletingFilename(null);
@@ -445,7 +446,7 @@ function UploadTab({ onGptSyncingChange, gptRagSyncing = false }) {
             setAskResult(reply);
             setAskSources(sources);
         } catch (err) {
-            setAskError(err.response?.data?.error || err.message || 'שגיאה בשאילתה');
+            setAskError(formatApiErrorForUser(err, 'שגיאה בשאילתה'));
         } finally {
             setAskLoading(false);
         }

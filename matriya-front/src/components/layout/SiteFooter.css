@@ -65,6 +65,12 @@
   vertical-align: middle;
 }
 
+@media (max-width: 900px) {
+  .site-footer {
+    padding-bottom: calc(24px + 72px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 @media (max-width: 480px) {
   .site-footer__bottom {
     flex-direction: column;
