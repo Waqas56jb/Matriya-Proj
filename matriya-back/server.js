@@ -72,6 +72,7 @@ import { handleLabBridgeFlow } from './lib/matriyaLabBridgeFlow.js';
 import { externalLayerRouter, initExternalLayerFromEnv } from './lib/externalLayerRouter.js';
 import { evaluate as evaluateConstraintEngine } from './services/eliminationLogic.js';
 import sourcesRouter from './routes/external/sources.js';
+import corrosionRouter from './routes/projects/corrosion.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -125,6 +126,7 @@ app.use('/admin', adminRouter);
 initExternalLayerFromEnv(logger);
 app.use('/api/external/v1', externalLayerRouter);
 app.use('/api/external/sources', sourcesRouter);
+app.use('/api/projects/corrosion-shield', corrosionRouter);
 
 /**
  * POST /api/cache/get   — { input, agent_name } → { result, cached }
