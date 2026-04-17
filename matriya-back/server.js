@@ -73,6 +73,7 @@ import { externalLayerRouter, initExternalLayerFromEnv } from './lib/externalLay
 import { evaluate as evaluateConstraintEngine } from './services/eliminationLogic.js';
 import sourcesRouter from './routes/external/sources.js';
 import corrosionRouter from './routes/projects/corrosion.js';
+import whatsappRouter from './routes/webhook/whatsapp.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -127,6 +128,7 @@ initExternalLayerFromEnv(logger);
 app.use('/api/external/v1', externalLayerRouter);
 app.use('/api/external/sources', sourcesRouter);
 app.use('/api/projects/corrosion-shield', corrosionRouter);
+app.use('/api/webhook/whatsapp', whatsappRouter);
 
 /**
  * POST /api/cache/get   — { input, agent_name } → { result, cached }
