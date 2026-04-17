@@ -1,5 +1,15 @@
 {
   "project_id": "CORR-001",
+  "name": "Corrosion Shield",
+  "category": "corrosion_protection",
   "metals": ["steel", "aluminum", "copper", "stainless"],
-  "status": "ACTIVE"
+  "mechanisms": ["galvanic", "oxidation", "crevice"],
+  "target_standards": ["ISO_12944", "ASTM_B117"],
+  "formulations": [
+    "GALVANIC_BARRIER",
+    "SMART_INTERFACE",
+    "BIMETALLIC_SEAL"
+  ],
+  "status": "ACTIVE",
+  "created": "2026-04-17"
 }
