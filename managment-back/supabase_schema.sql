@@ -197,6 +197,17 @@ CREATE INDEX IF NOT EXISTS audit_log_project_id_idx ON audit_log(project_id);
 CREATE INDEX IF NOT EXISTS audit_log_created_at_idx ON audit_log(created_at);
 CREATE INDEX IF NOT EXISTS audit_log_request_id_idx ON audit_log(request_id);
 
+-- External Layer v1 (David): must exist before runs.external_source_id FK. IF NOT EXISTS = no-op if already applied.
+CREATE TABLE IF NOT EXISTS external_sources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  source_code TEXT NOT NULL,
+  trust_grade TEXT NOT NULL CHECK (trust_grade IN ('C','D')),
+  url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Runs (per project): feature tagging + FSM trace
 CREATE TABLE IF NOT EXISTS runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -204,9 +215,13 @@ CREATE TABLE IF NOT EXISTS runs (
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'running', 'completed', 'failed')),
   features_core TEXT[] DEFAULT '{}',
   features_extended TEXT[] DEFAULT '{}',
+  external_source_id UUID REFERENCES external_sources(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+-- Existing DBs: CREATE TABLE IF NOT EXISTS does not add new columns.
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS external_source_id UUID REFERENCES external_sources(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS runs_external_source_id_idx ON runs (external_source_id) WHERE external_source_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS runs_project_id_idx ON runs(project_id);
 CREATE INDEX IF NOT EXISTS runs_status_idx ON runs(project_id, status);
 CREATE INDEX IF NOT EXISTS runs_created_at_idx ON runs(project_id, created_at DESC);

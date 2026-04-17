@@ -418,6 +418,23 @@
 }
 
 @media (max-width: 600px) {
+  .answer-view {
+    margin-inline: 0;
+    border-radius: 14px;
+  }
+
+  .ac-decision-header__body {
+    padding: 1rem 0.95rem 1.1rem;
+  }
+
+  .ac-evidence-block,
+  .ac-constraint-block,
+  .ac-external-block,
+  .ac-blocked-block,
+  .ac-next-block {
+    padding: 1rem 0.95rem;
+  }
+
   .ac-evidence-dl {
     grid-template-columns: 1fr;
   }
@@ -428,5 +445,15 @@
 
   .ac-evidence-dl dt:first-child {
     margin-top: 0;
+  }
+
+  .ac-channel-table {
+    min-width: 0;
+    font-size: 0.82rem;
+  }
+
+  .ac-channel-table th,
+  .ac-channel-table td {
+    padding: 8px 8px;
   }
 }

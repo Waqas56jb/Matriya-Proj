@@ -4,6 +4,17 @@
     box-sizing: border-box;
 }
 
+html {
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+}
+
+#root {
+    min-width: 0;
+    width: 100%;
+    max-width: 100vw;
+}
+
 :root {
     --matriya-bg: #f1f5f9;
     --matriya-bg-page: linear-gradient(160deg, #eef2ff 0%, #f8fafc 45%, #f0fdfa 100%);

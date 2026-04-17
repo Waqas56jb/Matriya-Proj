@@ -22,12 +22,14 @@
 .site-header__inner {
   max-width: min(1200px, 100%);
   margin: 0 auto;
-  padding: 14px clamp(16px, 4vw, 28px);
+  padding: 12px clamp(12px, 4vw, 28px);
+  padding-top: max(12px, env(safe-area-inset-top));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .site-header__brand {
@@ -121,12 +123,13 @@
 .site-header__slot {
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(15, 23, 42, 0.25);
-  padding: 10px clamp(12px, 3vw, 24px) 14px;
+  padding: 10px clamp(8px, 2.5vw, 24px) 14px;
+  min-width: 0;
 }
 
 @media (max-width: 520px) {
   .site-header__welcome-who {
-    max-width: 140px;
+    max-width: min(140px, 35vw);
   }
 
   .site-header__logout {
@@ -136,5 +139,14 @@
   .site-header__actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .site-header__inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .site-header__brand {
+    width: 100%;
   }
 }

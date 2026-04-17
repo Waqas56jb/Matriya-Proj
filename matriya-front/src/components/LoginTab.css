@@ -1,9 +1,12 @@
 .login-tab {
     width: 100%;
+    max-width: 100%;
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 60vh;
+    min-height: min(60vh, 720px);
+    padding-inline: 4px;
+    box-sizing: border-box;
 }
 
 .auth-form {

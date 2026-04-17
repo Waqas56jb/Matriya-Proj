@@ -4,10 +4,14 @@
 
 .admin-sections {
     display: flex;
-    gap: 15px;
+    flex-wrap: wrap;
+    gap: 10px;
     margin-bottom: 30px;
     border-bottom: 2px solid rgba(22, 101, 52, 0.2);
     padding-bottom: 15px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
 }
 
 .section-button {

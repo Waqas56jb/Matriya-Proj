@@ -310,4 +310,18 @@
     .ask-matriya-messages {
         max-height: min(52vh, 420px);
     }
+
+    .ask-matriya-input {
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .ask-matriya-single {
+        padding-inline: 2px;
+    }
+
+    .ask-matriya-file-section {
+        padding: 12px 14px;
+    }
 }

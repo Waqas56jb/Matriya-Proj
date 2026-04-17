@@ -1,7 +1,16 @@
 .management-lab-tab {
   max-width: 720px;
+  width: 100%;
+  min-width: 0;
   margin: 0 auto;
-  padding: 1rem 0.5rem;
+  padding: 1rem clamp(8px, 3vw, 16px);
+  box-sizing: border-box;
+}
+
+@media (max-width: 480px) {
+  .management-lab-card {
+    padding: 1.1rem 1rem;
+  }
 }
 
 .management-lab-card {

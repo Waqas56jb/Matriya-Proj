@@ -23,6 +23,7 @@
 .gpt-sync-status-row__label {
     font-size: 0.9rem;
     flex: 1 1 200px;
+    min-width: 0;
     color: var(--matriya-text, #1a1a1a);
 }
 

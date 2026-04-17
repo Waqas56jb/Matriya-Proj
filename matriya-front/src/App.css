@@ -1,6 +1,8 @@
 .app-root {
     min-height: 100vh;
     min-height: 100dvh;
+    min-width: 0;
+    width: 100%;
     display: flex;
     flex-direction: column;
 }
@@ -8,7 +10,9 @@
 .app-main {
     flex: 1;
     width: 100%;
+    min-width: 0;
     padding: clamp(16px, 3vw, 28px) 0;
+    padding-bottom: max(clamp(16px, 3vw, 28px), env(safe-area-inset-bottom, 0px));
 }
 
 .app-main--auth {
@@ -19,7 +23,10 @@
 
 .auth-hero {
     max-width: 480px;
+    width: 100%;
     margin: 0 auto;
+    padding-inline: clamp(4px, 2vw, 12px);
+    box-sizing: border-box;
 }
 
 .auth-lead {
@@ -48,13 +55,26 @@
     max-width: min(1200px, 100%);
     margin: 0 auto;
     padding: 0 clamp(10px, 3vw, 20px);
+    min-width: 0;
 }
 
-/* Tabs in sticky header strip — light buttons on dark bar */
+/* Tabs in sticky header strip — light buttons on dark bar; scroll horizontally on narrow viewports */
+.site-header__slot {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+}
+
 .site-header__slot .matriya-tabs.tabs {
     margin: 0;
-    padding-bottom: 4px;
+    padding-bottom: 6px;
     gap: 8px;
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
 }
 
 .site-header__slot .tab-button {
@@ -62,6 +82,8 @@
     border: 1px solid rgba(255, 255, 255, 0.22);
     color: #e0e7ff;
     min-height: 44px;
+    padding-inline: clamp(10px, 3vw, 20px);
+    flex: 0 0 auto;
 }
 
 .site-header__slot .tab-button:hover:not(:disabled) {
@@ -81,8 +103,8 @@
     opacity: 0.45;
 }
 
-/* Tabs on auth / fallback (light) — if ever outside header */
-.matriya-tabs.tabs:not(.site-header__slot .matriya-tabs) {
+/* Tab row (scroll on small screens; header overrides margin via .site-header__slot) */
+.matriya-tabs.tabs {
     display: flex;
     flex-wrap: nowrap;
     gap: 10px;
@@ -190,5 +212,23 @@
         flex-wrap: wrap;
         justify-content: center;
         overflow-x: visible;
+    }
+
+    .site-header__slot {
+        overflow-x: visible;
+    }
+
+    .site-header__slot .matriya-tabs.tabs {
+        flex-wrap: wrap;
+        justify-content: center;
+        overflow-x: visible;
+    }
+}
+
+@media (max-width: 480px) {
+    .site-header__slot .tab-button {
+        font-size: 0.85rem;
+        min-height: 42px;
+        padding-block: 8px;
     }
 }

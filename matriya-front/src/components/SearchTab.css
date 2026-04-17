@@ -91,7 +91,7 @@
 
 .lab-bridge-fields .lab-field-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
     gap: 0.75rem 1rem;
     margin-top: 0.5rem;
 }
@@ -871,18 +871,84 @@
     .search-box {
         flex-direction: column;
     }
-    
+
     .search-button {
         width: 100%;
     }
-    
+
     .search-options {
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .result-header {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .file-select {
+        min-width: 0;
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .agent-button {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+}
+
+@media (max-width: 480px) {
+    .search-input {
+        font-size: 16px;
+    }
+
+    .research-stage-section,
+    .answer-mode-section {
+        padding: 12px 14px;
+    }
+
+    .stage-buttons {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .stage-button {
+        width: 100%;
+        text-align: center;
+    }
+
+    .mode-buttons {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .mode-button {
+        width: 100%;
+        text-align: center;
+    }
+
+    .agent-button {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .agent-actions {
+        flex-direction: column;
+    }
+
+    .ai-answer,
+    .search-result-item,
+    .agent-analysis {
+        padding: 16px;
+    }
+
+    .answer-text {
+        padding: 14px;
+        font-size: 1rem;
+    }
+
+    .search-result-item:hover {
+        transform: none;
     }
 }
