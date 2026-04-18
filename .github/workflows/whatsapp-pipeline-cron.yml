@@ -1,0 +1,24 @@
+name: WhatsApp Pipeline Cron
+
+# Runs every minute — triggers the MATRIYA pipeline to process pending WhatsApp tasks
+# and send GO/WAIT/NO-GO replies to David.
+on:
+  schedule:
+    - cron: '* * * * *'   # every minute (GitHub Actions minimum interval)
+  workflow_dispatch:       # allow manual trigger from GitHub UI
+
+jobs:
+  process-pending:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Trigger WhatsApp Pipeline
+        run: |
+          echo "Calling process-pending endpoint..."
+          STATUS=$(curl -s -o /tmp/body.txt -w "%{http_code}" \
+            "https://matriya-proj-iy14.vercel.app/api/whatsapp/process-pending")
+          BODY=$(cat /tmp/body.txt)
+          echo "HTTP $STATUS — $BODY"
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Pipeline endpoint returned HTTP $STATUS"
+          fi
