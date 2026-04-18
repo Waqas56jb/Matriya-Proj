@@ -112,12 +112,23 @@ export async function handleInbound(req, res) {
 
   logger.info(`[twilioGateway] inbound from=${from} message="${userMessage.slice(0, 80)}"`);
 
-  // Log inbound ticket
+  // Log inbound ticket to twilio_tickets
   let ticketId;
   try {
     ticketId = await logTicket(from, userMessage, 'inbound');
   } catch (e) {
     logger.error(`[twilioGateway] logTicket(inbound) failed: ${e.message}`);
+  }
+
+  // Also queue into whatsapp_tasks (status=PENDING) so whatsappPipeline.js picks it up
+  try {
+    await getSupabase().from('whatsapp_tasks').insert([{
+      from_number: from,
+      message: userMessage,
+      status: 'PENDING'
+    }]);
+  } catch (e) {
+    logger.error(`[twilioGateway] whatsapp_tasks insert failed: ${e.message}`);
   }
 
   // Run MATRIYA pipeline
