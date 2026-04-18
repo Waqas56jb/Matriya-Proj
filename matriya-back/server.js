@@ -403,7 +403,7 @@ app.get("/", (req, res) => {
     message: "MATRIYA RAG System API",
     version: "1.0.0",
     status: "running",
-    build: "github-webhook-v1"
+    build: "whatsapp-pipeline-v1"
   });
 });
 
