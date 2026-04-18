@@ -10,5 +10,11 @@
       "maxDuration": 300,
       "memory": 2048
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/whatsapp/process-pending",
+      "schedule": "* * * * *"
+    }
+  ]
 }

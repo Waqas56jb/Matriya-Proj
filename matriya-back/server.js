@@ -79,6 +79,7 @@ import experimentsUploadRouter from './routes/experiments/upload.js';
 import { get as cacheGet, set as cacheSet, getOrCompute } from './services/agentCache.js';
 import { evaluate as evaluateCreativity } from './services/creativityOrchestrator.js';
 import { handleInbound, handleOutbound, createActionPackage } from './twilioGateway.js';
+import { processPendingTasks, startPolling } from './services/whatsappPipeline.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -143,6 +144,18 @@ app.use('/api/experiments', experimentsUploadRouter);
 app.post('/api/whatsapp/inbound', handleInbound);
 // Milestone 1: GET health check for the inbound route
 app.get('/api/whatsapp/inbound', (_req, res) => res.status(200).type('text/plain').send('WhatsApp inbound OK'));
+
+// WhatsApp Pipeline — cron endpoint (Vercel calls this every minute via vercel.json crons)
+// Also callable manually for testing: GET /api/whatsapp/process-pending
+app.get('/api/whatsapp/process-pending', async (req, res) => {
+  try {
+    const result = await processPendingTasks();
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    logger.error(`GET /api/whatsapp/process-pending: ${e.message}`);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
 // Milestone 2: outbound action — POST { to, message, expectedResponseType }
 // Triggers handleOutbound which sends a WhatsApp message and logs to twilio_tickets.
@@ -2536,6 +2549,8 @@ app.post("/reset", async (req, res) => {
 if (!process.env.VERCEL) {
   app.listen(settings.API_PORT, settings.API_HOST, () => {
     logger.info(`Server running on http://${settings.API_HOST}:${settings.API_PORT}`);
+    // Start WhatsApp pipeline polling (30s interval) — non-Vercel only
+    startPolling();
   });
 }
 
