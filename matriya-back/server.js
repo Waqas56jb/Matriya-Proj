@@ -77,6 +77,7 @@ import whatsappRouter from './routes/webhook/whatsapp.js';
 import experimentsUploadRouter from './routes/experiments/upload.js';
 import { get as cacheGet, set as cacheSet, getOrCompute } from './services/agentCache.js';
 import { evaluate as evaluateCreativity } from './services/creativityOrchestrator.js';
+import { handleInbound, handleOutbound, createActionPackage } from './twilioGateway.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -135,6 +136,29 @@ app.use('/api/external/sources', sourcesRouter);
 app.use('/api/projects/corrosion-shield', corrosionRouter);
 app.use('/api/webhook/whatsapp', whatsappRouter);
 app.use('/api/experiments', experimentsUploadRouter);
+
+// Milestone 1: inbound WhatsApp → MATRIYA pipeline → reply
+app.post('/api/whatsapp/inbound', handleInbound);
+// Milestone 1: GET health check for the inbound route
+app.get('/api/whatsapp/inbound', (_req, res) => res.status(200).type('text/plain').send('WhatsApp inbound OK'));
+
+// Milestone 2: outbound action — POST { to, message, expectedResponseType }
+// Triggers handleOutbound which sends a WhatsApp message and logs to twilio_tickets.
+app.post('/api/whatsapp/outbound', async (req, res) => {
+  try {
+    const { to, message, expectedResponseType } = req.body || {};
+    if (!to || !message) return res.status(400).json({ error: 'to and message are required' });
+    const actionPackage = createActionPackage(
+      { decision: { reason: message, action_required: expectedResponseType || 'STOP' } },
+      to
+    );
+    await handleOutbound(actionPackage);
+    res.json({ sent: true, to, action: expectedResponseType || 'STOP' });
+  } catch (e) {
+    logger.error(`POST /api/whatsapp/outbound: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 /**
  * POST /api/cache/get   — { input, agent_name } → { result, cached }
