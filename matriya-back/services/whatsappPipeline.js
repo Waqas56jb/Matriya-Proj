@@ -159,7 +159,9 @@ export async function processPendingTasks() {
       errors++;
 
       // Mark as ERROR so it's not retried endlessly
-      await sb.from(TABLE).update({ status: 'ERROR' }).eq('id', task.id).catch(() => {});
+      try {
+        await sb.from(TABLE).update({ status: 'ERROR' }).eq('id', task.id);
+      } catch (_) { /* best-effort */ }
     }
   }
 
