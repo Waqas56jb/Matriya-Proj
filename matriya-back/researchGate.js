@@ -698,4 +698,4 @@ export async function evaluatePreLlmResearchGate({ sessionId, stage, completedSt
   return { ok: true };
 }
 
-export { RESPONSE_TYPE, STAGES_ORDER, VALID_STAGES, getNextAllowedStage, isStageAllowed, runPipelineCheckpoints };
+export { RESPONSE_TYPE, STAGES_ORDER, VALID_STAGES, getNextAllowedStage, isStageAllowed };
