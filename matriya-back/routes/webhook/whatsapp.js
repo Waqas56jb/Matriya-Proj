@@ -50,11 +50,18 @@ import logger from '../../logger.js';
 
 const router = Router();
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
-
 const TABLE = 'whatsapp_tasks';
+
+/** Lazy Supabase client — safe at import time when env vars may not be present yet. */
+let _sbWa = null;
+function getSupabase() {
+  if (_sbWa) return _sbWa;
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const key = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_KEY are required for WhatsApp webhook');
+  _sbWa = createClient(url, key);
+  return _sbWa;
+}
 
 /** Twilio request validation (same algorithm as twilio-node). */
 function validateTwilioSignature(authToken, twilioSignature, url, params) {
@@ -215,13 +222,19 @@ router.post('/', async (req, res) => {
     }
   }
 
-  const { error } = await supabase.from(TABLE).insert([{ from_number, message, status: 'PENDING' }]);
+  let dbError;
+  try {
+    const { error } = await getSupabase().from(TABLE).insert([{ from_number, message, status: 'PENDING' }]);
+    dbError = error;
+  } catch (e) {
+    return res.status(503).json({ received: false, task: message, error: e.message });
+  }
 
-  if (error) {
+  if (dbError) {
     return res.status(500).json({
       received: false,
       task: message,
-      error: error.message
+      error: dbError.message
     });
   }
 

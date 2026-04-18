@@ -24,11 +24,18 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
-
 const TABLE = 'agent_cache';
+
+/** Lazy singleton — only created on first use so missing env vars don't crash startup. */
+let _supabase = null;
+function getSupabase() {
+  if (_supabase) return _supabase;
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const key = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_KEY are required for agentCache');
+  _supabase = createClient(url, key);
+  return _supabase;
+}
 
 /** TTL in milliseconds per agent type */
 const TTL_MS = {
@@ -65,7 +72,8 @@ function buildKey(input, agent_name) {
  */
 async function get(input, agent_name) {
   const key = buildKey(input, agent_name);
-  const { data, error } = await supabase
+  const sb = getSupabase();
+  const { data, error } = await sb
     .from(TABLE)
     .select('value, expires_at')
     .eq('key', key)
@@ -74,8 +82,7 @@ async function get(input, agent_name) {
   if (error || !data) return null;
 
   if (new Date(data.expires_at) <= new Date()) {
-    // Lazy-delete expired entry
-    await supabase.from(TABLE).delete().eq('key', key);
+    await sb.from(TABLE).delete().eq('key', key);
     return null;
   }
 
@@ -94,7 +101,7 @@ async function set(input, agent_name, value) {
   const ttl = resolveTtl(agent_name);
   const expires_at = new Date(Date.now() + ttl).toISOString();
 
-  const { error } = await supabase.from(TABLE).upsert(
+  const { error } = await getSupabase().from(TABLE).upsert(
     { key, value, agent_name: agent_name || 'unknown', expires_at },
     { onConflict: 'key' }
   );
@@ -127,7 +134,7 @@ async function getOrCompute(input, agent_name, fn) {
  */
 async function invalidate(input, agent_name) {
   const key = buildKey(input, agent_name);
-  await supabase.from(TABLE).delete().eq('key', key);
+  await getSupabase().from(TABLE).delete().eq('key', key);
 }
 
 /**
@@ -135,7 +142,7 @@ async function invalidate(input, agent_name) {
  * @returns {Promise<number>} count of deleted rows
  */
 async function purgeExpired() {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from(TABLE)
     .delete()
     .lt('expires_at', new Date().toISOString())

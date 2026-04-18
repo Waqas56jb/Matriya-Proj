@@ -4,32 +4,40 @@ import { createClient } from '@supabase/supabase-js';
 
 const router = Router();
 
-// Same credentials as rest of matriya-back; fallbacks match David's env names (service role for writes).
-const supabaseUrl =
-  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey =
-  process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+/** Lazy Supabase client — avoids crashing at import time if env vars not yet set. */
+let _sb = null;
+function getSupabase() {
+  if (_sb) return _sb;
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const key = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_KEY are required');
+  _sb = createClient(url, key);
+  return _sb;
+}
 
 const ALLOWED_TRUST_GRADES = ['C', 'D'];
 
 // GET /api/external/sources/count
 router.get('/count', async (req, res) => {
-  const { count, error } = await supabase
-    .from('external_sources')
-    .select('*', { count: 'exact', head: true });
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ count });
+  try {
+    const { count, error } = await getSupabase()
+      .from('external_sources')
+      .select('*', { count: 'exact', head: true });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ count });
+  } catch (e) { res.status(503).json({ error: e.message }); }
 });
 
 // GET /api/external/sources
 router.get('/', async (req, res) => {
-  const { data, error } = await supabase
-    .from('external_sources')
-    .select('*')
-    .order('created_at', { ascending: false });
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  try {
+    const { data, error } = await getSupabase()
+      .from('external_sources')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (e) { res.status(503).json({ error: e.message }); }
 });
 
 // POST /api/external/sources
@@ -56,7 +64,8 @@ router.post('/', async (req, res) => {
     }
   }
 
-  const { data, error } = await supabase
+  const sb = getSupabase();
+  const { data, error } = await sb
     .from('external_sources')
     .insert([{ name, source_type, source_code, trust_grade, url }])
     .select()
@@ -64,8 +73,7 @@ router.post('/', async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
 
-  // Audit log required
-  await supabase.from('external_audit_log').insert([{
+  await sb.from('external_audit_log').insert([{
     query_text: `SOURCE_CREATED: ${name}`,
     used_external_as_context_only: true,
     external_document_ids: []
