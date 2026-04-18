@@ -131,14 +131,28 @@ export async function processPendingTasks() {
     try {
       // 1. Run the MATRIYA pipeline
       logger.info(`[whatsappPipeline] task ${task.id} → runPipeline("${task.message.slice(0, 60)}")`);
-      const pipelineResult = await runPipeline(task.message);
+      let pipelineResult;
+      try {
+        pipelineResult = await runPipeline(task.message);
+      } catch (pipeErr) {
+        logger.error(`[whatsappPipeline] runPipeline failed for ${task.id}: ${pipeErr.message}`);
+        pipelineResult = {
+          decision: { action_required: 'STOP', reason: 'Pipeline error: ' + pipeErr.message },
+          score: { emergence_score: 0 }
+        };
+      }
 
       // 2. Format the reply
       const replyText = formatReply(pipelineResult);
       logger.info(`[whatsappPipeline] task ${task.id} → reply: ${replyText.replace(/\n/g, ' | ')}`);
 
-      // 3. Send WhatsApp reply to David's number
-      await sendReply(replyText);
+      // 3. Send WhatsApp reply to David's number (non-fatal — log and continue)
+      try {
+        await sendReply(replyText);
+      } catch (replyErr) {
+        logger.error(`[whatsappPipeline] sendReply failed for ${task.id}: ${replyErr.message}`);
+        // Don't abort — still mark as DONE so we don't loop forever
+      }
 
       // 4. Mark task as DONE
       const { error: updateError } = await sb
@@ -147,7 +161,7 @@ export async function processPendingTasks() {
         .eq('id', task.id);
 
       if (updateError) {
-        logger.error(`[whatsappPipeline] update error for ${task.id}: ${updateError.message}`);
+        logger.error(`[whatsappPipeline] DB update error for ${task.id}: ${updateError.message}`);
         errors++;
       } else {
         logger.info(`[whatsappPipeline] task ${task.id} → DONE`);
@@ -155,7 +169,7 @@ export async function processPendingTasks() {
       }
 
     } catch (e) {
-      logger.error(`[whatsappPipeline] error on task ${task.id}: ${e.message}`);
+      logger.error(`[whatsappPipeline] unexpected error on task ${task.id}: ${e.message}`);
       errors++;
 
       // Mark as ERROR so it's not retried endlessly
