@@ -390,7 +390,7 @@ app.get("/", (req, res) => {
     message: "MATRIYA RAG System API",
     version: "1.0.0",
     status: "running",
-    build: "task-h-v2"
+    build: "github-webhook-v1"
   });
 });
 
