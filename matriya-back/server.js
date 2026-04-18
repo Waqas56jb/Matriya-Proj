@@ -75,6 +75,8 @@ import sourcesRouter from './routes/external/sources.js';
 import corrosionRouter from './routes/projects/corrosion.js';
 import whatsappRouter from './routes/webhook/whatsapp.js';
 import experimentsUploadRouter from './routes/experiments/upload.js';
+import { get as cacheGet, set as cacheSet, getOrCompute } from './services/agentCache.js';
+import { evaluate as evaluateCreativity } from './services/creativityOrchestrator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -139,8 +141,6 @@ app.use('/api/experiments', experimentsUploadRouter);
  * POST /api/cache/set   — { input, agent_name, value } → { key, expires_at }
  * POST /api/cache/query — { input, agent_name } → runs mock compute, returns { result, cached }
  */
-import { get as cacheGet, set as cacheSet, getOrCompute } from './services/agentCache.js';
-
 app.post('/api/cache/get', async (req, res) => {
   try {
     const { input, agent_name } = req.body || {};
@@ -176,8 +176,6 @@ app.post('/api/cache/query', async (req, res) => {
  * Body: { text: string, agent_name: string }
  * Returns: { Es_score, regime, components, feedback, agent_name }
  */
-import { evaluate as evaluateCreativity } from './services/creativityOrchestrator.js';
-
 app.post('/api/creativity/evaluate', (req, res) => {
   try {
     const { text, agent_name } = req.body || {};
@@ -365,7 +363,8 @@ app.get("/", (req, res) => {
   return res.json({
     message: "MATRIYA RAG System API",
     version: "1.0.0",
-    status: "running"
+    status: "running",
+    build: "task-h-v2"
   });
 });
 
