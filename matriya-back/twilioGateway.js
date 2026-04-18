@@ -69,9 +69,10 @@ export function verifyTwilioSignature(req) {
   const twilioSignature = (req.headers['x-twilio-signature'] || '').trim();
   if (!twilioSignature) return false;
 
-  // Use the explicit public URL env var if set; fall back to reconstructed URL.
-  const explicitUrl = (process.env.TWILIO_WEBHOOK_PUBLIC_URL || '').trim();
-  const url = explicitUrl || `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+  // Always derive the URL from the actual request so it matches whatever URL
+  // is configured in the Twilio Console for this specific endpoint.
+  // trust proxy: 1 is set in server.js so req.protocol is correctly "https" behind Vercel.
+  const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
   const params = req.body || {};
 
   return twilio.validateRequest(authToken, twilioSignature, url, params);
