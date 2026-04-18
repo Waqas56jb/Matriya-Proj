@@ -222,37 +222,32 @@ router.post('/', async (req, res) => {
     }
   }
 
-  let dbError;
+  // Insert to Supabase (best-effort — don't block the TwiML reply on DB errors)
   try {
     const { error } = await getSupabase().from(TABLE).insert([{ from_number, message, status: 'PENDING' }]);
-    dbError = error;
+    if (error) logger.error(`whatsapp_tasks insert: ${error.message}`);
   } catch (e) {
-    return res.status(503).json({ received: false, task: message, error: e.message });
+    logger.error(`whatsapp_tasks insert exception: ${e.message}`);
   }
 
-  if (dbError) {
-    return res.status(500).json({
-      received: false,
-      task: message,
-      error: dbError.message
-    });
+  // Trigger Claude Code synchronously (fire-and-forget child process)
+  try {
+    triggerClaudeCode(message);
+  } catch (e) {
+    logger.error(`triggerClaudeCode: ${e.message}`);
   }
 
-  res.json({
-    received: true,
-    task: message
-  });
+  // Respond with TwiML so Twilio delivers the reply as a WhatsApp message.
+  // This is the only reliable pattern on serverless (setImmediate is killed after res.send).
+  const template = (process.env.TWILIO_REPLY_TEXT_TEMPLATE || '').trim();
+  const preview = message.length > 900 ? `${message.slice(0, 900)}…` : message;
+  const replyText = template
+    ? template.split('{task}').join(preview)
+    : `MATRIYA: קיבלנו את המשימה ונריץ עיבוד.\n\n${preview}`;
 
-  setImmediate(() => {
-    try {
-      triggerClaudeCode(message);
-    } catch (e) {
-      logger.error(`triggerClaudeCode: ${e.message}`);
-    }
-    sendWhatsAppReplyToSender(from_number, message).catch((e) =>
-      logger.error(`WhatsApp reply failed: ${e.response?.data || e.message}`)
-    );
-  });
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${replyText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</Message></Response>`;
+  res.set('Content-Type', 'text/xml');
+  res.send(twiml);
 });
 
 export default router;
