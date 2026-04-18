@@ -74,12 +74,15 @@ import { evaluate as evaluateConstraintEngine } from './services/eliminationLogi
 import sourcesRouter from './routes/external/sources.js';
 import corrosionRouter from './routes/projects/corrosion.js';
 import whatsappRouter from './routes/webhook/whatsapp.js';
+import experimentsUploadRouter from './routes/experiments/upload.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Initialize Express app
 const app = express();
+// Trust first proxy (e.g. Vercel) so req.protocol / X-Forwarded-* match the public URL — used by Twilio webhook signature checks.
+app.set('trust proxy', 1);
 
 // CORS: must not combine origin: "*" with credentials: true (browsers block; looks like "no CORS header").
 // origin: true echoes the request Origin so preflight succeeds for matriya-front.vercel.app, localhost, etc.
@@ -129,6 +132,7 @@ app.use('/api/external/v1', externalLayerRouter);
 app.use('/api/external/sources', sourcesRouter);
 app.use('/api/projects/corrosion-shield', corrosionRouter);
 app.use('/api/webhook/whatsapp', whatsappRouter);
+app.use('/api/experiments', experimentsUploadRouter);
 
 /**
  * POST /api/cache/get   — { input, agent_name } → { result, cached }

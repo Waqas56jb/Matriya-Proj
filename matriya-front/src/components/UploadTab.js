@@ -5,6 +5,7 @@ import { runAskMatriyaDocumentsQuery } from '../utils/askMatriyaDocumentsClient'
 import { formatBoldSegments } from '../utils/formatBold';
 import GptSyncStatusRow, { filterEligibleLogicalNames, GPT_ELIGIBLE_RE } from './GptSyncStatusRow';
 import AnswerEvidenceSection from './AnswerEvidenceSection';
+import RachelUpload from './RachelUpload';
 import './UploadTab.css';
 
 const ASK_EVIDENCE_TITLE = 'מקורות מהמסמכים (ציטוטים)';
@@ -557,6 +558,10 @@ function UploadTab({ onGptSyncingChange, gptRagSyncing = false }) {
                                 )}
                             </div>
                         )}
+                    </div>
+
+                    <div className="card rachel-upload-card">
+                        <RachelUpload />
                     </div>
 
                     <div className="card documents-table-card">

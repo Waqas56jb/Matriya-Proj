@@ -644,6 +644,11 @@ const Experiment = sequelize ? sequelize.define('Experiment', {
     allowNull: false,
     comment: 'ID from lab system'
   },
+  /** Optional calendar date for the experiment (e.g. Rachel upload / lab run date). */
+  experiment_date: {
+    type: DataTypes.DATEONLY,
+    allowNull: true
+  },
   technology_domain: {
     type: DataTypes.STRING,
     allowNull: true

@@ -1,0 +1,74 @@
+.rachel-upload {
+    margin-top: 0;
+}
+
+.rachel-upload__title {
+    margin: 0 0 8px;
+    font-size: 1.15rem;
+    font-weight: 600;
+}
+
+.rachel-upload__hint {
+    margin: 0 0 16px;
+    font-size: 0.9rem;
+    opacity: 0.85;
+    line-height: 1.45;
+}
+
+.rachel-upload__form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 520px;
+}
+
+.rachel-upload__label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.rachel-upload__label-text {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.rachel-upload__input,
+.rachel-upload__textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--matriya-border, rgba(0, 0, 0, 0.12));
+    font: inherit;
+    background: var(--matriya-surface, #fff);
+    color: inherit;
+}
+
+.rachel-upload__textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.rachel-upload__submit {
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--matriya-accent, #2563eb);
+    color: #fff;
+}
+
+.rachel-upload__submit:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.rachel-upload__submit:focus-visible {
+    outline: 2px solid var(--matriya-accent, #2563eb);
+    outline-offset: 2px;
+}
