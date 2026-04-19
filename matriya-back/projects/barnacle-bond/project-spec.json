@@ -1,0 +1,13 @@
+{
+  "project_id": "BARN-001",
+  "name": "Barnacle Bond",
+  "category": "bio_adhesion",
+  "status": "ACTIVE",
+  "created": "2026-04-17",
+  "next_experiment": {
+    "name": "PDA Primer Test",
+    "objective": "Test polydopamine adhesion on steel surface",
+    "conditions": "pH 8.5, 24hr immersion",
+    "priority": "HIGH"
+  }
+}
